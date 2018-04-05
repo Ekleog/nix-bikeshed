@@ -170,7 +170,10 @@ binOpStr op = case op of
     NConcat -> "++"
 
 binaryOpIndent :: NBinaryOp -> NExpr -> NExpr -> String
-binaryOpIndent op l r = "(" ++ exprIndent l ++ " " ++ binOpStr op ++ " " ++ exprIndent r ++ ")"
+binaryOpIndent op l r =
+    parenIf (binaryPrio op <= exprPrio l) (exprIndent l) ++ " " ++
+    binOpStr op ++ " " ++
+    parenIf (binaryPrio op <= exprPrio r) (exprIndent r)
 
 selectIndent :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectIndent set attr def =

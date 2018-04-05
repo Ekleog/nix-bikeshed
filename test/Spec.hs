@@ -62,17 +62,17 @@ main = hspec $ do
             exprIndent (parseStr "<nixpkgs/nixos>") `shouldBe` "<nixpkgs/nixos>"
         it "indents operator-based expressions" $ do
             exprIndent (parseStr "-(1+2+3-5*6 == 7 && 8 > 9)") `shouldBe`
-                "-((((((1 + 2) + 3) - (5 * 6)) == 7) && (8 > 9)))"
+                "-(((1 + 2) + 3) - 5 * 6 == 7 && 8 > 9)"
             exprIndent (parseStr "-3") `shouldBe` "-3"
         it "indents select expressions" $ do
             exprIndent (parseStr "({}.a or {b=1;}).b") `shouldBe`
                 "(({}).a or { b = 1; }).b"
         it "indents ?-expressions" $ do
             exprIndent (parseStr "{a=1;}?a && {} ? b") `shouldBe`
-                "(({ a = 1; }) ? a && ({}) ? b)"
+                "({ a = 1; }) ? a && ({}) ? b"
         it "indents lambdas" $ do
             exprIndent (parseStr "foo: bar: foo+bar") `shouldBe`
-                "foo: bar: (foo + bar)"
+                "foo: bar: foo + bar"
         it "indents function applications" $ do
             exprIndent (parseStr "(foo: foo) 3") `shouldBe`
                 "(foo: foo) 3"
@@ -81,13 +81,13 @@ main = hspec $ do
                 "let a = 1; in a"
         it "indents if-expressions" $ do
             exprIndent (parseStr "if  a==b then 0 else 1") `shouldBe`
-                "if (a == b) then 0 else 1"
+                "if a == b then 0 else 1"
         it "indents with-blocks" $ do
             exprIndent (parseStr "with {}; 12") `shouldBe`
                 "with {}; 12"
         it "indents assertions" $ do
             exprIndent (parseStr "assert 1==2; null") `shouldBe`
-                "assert (1 == 2); null"
+                "assert 1 == 2; null"
         it "indents parameter sets" $ do
             exprIndent (parseStr "{foo, bar?0, baz?{x=1;}}: baz") `shouldBe`
                 "{ bar ? 0, baz ? { x = 1; }, foo }: baz"
