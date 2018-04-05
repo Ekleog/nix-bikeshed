@@ -31,7 +31,6 @@ parseStr s = case parseNixString s of
 indent :: NExpr -> String
 indent a = trace (show a) $ exprI a
 
--- TODO: handle priority of operators
 exprI :: NExpr -> String
 exprI expr = case expr of
     Fix (NConstant c) -> atomI c
