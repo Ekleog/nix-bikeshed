@@ -46,3 +46,7 @@ main = hspec $ do
             exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{a=b;b=a;}"
         it "indents recursive sets" $ do
             exprIndent (parseStr "rec{a=b;b=a;}") `shouldBe` "rec {a=b;b=a;}"
+        it "indents literal paths" $ do
+            exprIndent (parseStr "./foo.bar") `shouldBe` "./foo.bar"
+        it "indents environment paths" $ do
+            exprIndent (parseStr "<nixpkgs/nixos>") `shouldBe` "<nixpkgs/nixos>"

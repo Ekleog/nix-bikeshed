@@ -38,8 +38,8 @@ exprIndent expr = case expr of
     Fix (NList vals) -> "[" ++ concatMap (\x -> exprIndent x ++ " ") vals ++ "]"
     Fix (NSet binds) -> "{" ++ concatMap bindingIndent binds ++ "}"
     Fix (NRecSet binds) -> "rec {" ++ concatMap bindingIndent binds ++ "}"
-    Fix (NLiteralPath _) -> "non implemented"
-    Fix (NEnvPath _) -> "non implemented"
+    Fix (NLiteralPath p) -> p
+    Fix (NEnvPath p) -> "<" ++ p ++ ">"
     Fix (NUnary _ _) -> "non implemented"
     Fix (NBinary _ _ _) -> "non implemented"
     Fix (NSelect _ _ _) -> "non implemented"
