@@ -79,15 +79,14 @@ atomIndent a = case a of
     NNull -> "null"
     NUri t -> T.unpack t
 
--- TODO: escape the text
 stringIndent :: NString NExpr -> String
 stringIndent s = case s of
     DoubleQuoted t -> stringIndent (Indented t) -- ignore string type
-    Indented t -> "\"" ++ concatMap antiquotedIndent t ++ "\""
+    Indented t -> "\"" ++ concatMap escapeAntiquoted t ++ "\""
 
-antiquotedIndent :: Antiquoted T.Text NExpr -> String
-antiquotedIndent a = case a of
-    Plain t -> T.unpack t
+escapeAntiquoted :: Antiquoted T.Text NExpr -> String
+escapeAntiquoted a = case a of
+    Plain t -> tail $ init $ show $ T.unpack t
     Antiquoted e -> "${" ++ exprIndent e ++ "}"
 
 unaryOpIndent :: NUnaryOp -> NExpr -> String

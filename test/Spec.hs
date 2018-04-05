@@ -37,6 +37,8 @@ main = hspec $ do
         it "indents strings" $ do
             exprIndent (parseStr "\"foo bar\"") `shouldBe` "\"foo bar\""
             exprIndent (parseStr "''foo bar''") `shouldBe` "\"foo bar\""
+            exprIndent (parseStr "''foo\"bar''") `shouldBe` "\"foo\\\"bar\""
+            exprIndent (parseStr "''foo\"bar''") `shouldBe` "\"foo\\\"bar\""
         it "indents lists" $ do
             exprIndent (parseStr "[1 2 3]") `shouldBe` "[1 2 3]"
         it "indents sets" $ do
