@@ -53,6 +53,59 @@ exprIndent expr = case expr of
     Fix (NWith set expr) -> stmtIndent "with" set expr
     Fix (NAssert test expr) -> stmtIndent "assert" test expr
 
+-- Less binds stronger
+exprPrio :: NExpr -> Int
+exprPrio expr = case expr of
+    -- See https://nixos.org/nix/manual/#table-operators
+    Fix (NConstant _) -> 0
+    Fix (NStr _) -> 0
+    Fix (NSym _) -> 0
+    Fix (NList _) -> 0
+    Fix (NSet _) -> 0
+    Fix (NRecSet _) -> 0
+    Fix (NLiteralPath _) -> 0
+    Fix (NEnvPath _) -> 0
+    Fix (NSelect _ _ _) -> 1
+    Fix (NApp _ _) -> 2
+    Fix (NUnary op _) -> unaryPrio op
+    Fix (NHasAttr _ _) -> 4
+    Fix (NBinary op _ _) -> binaryPrio op
+    -- No actual priority issue on these, they bind less
+    Fix (NAbs _ _) -> 100
+    Fix (NLet _ _) -> 100
+    Fix (NIf _ _ _) -> 100
+    Fix (NWith _ _) -> 100
+    Fix (NAssert _ _) -> 100
+
+unaryPrio :: NUnaryOp -> Int
+unaryPrio op = case op of
+    NNeg -> 3
+    NNot -> 8
+
+binaryPrio :: NBinaryOp -> Int
+binaryPrio op = case op of
+    NConcat -> 5
+    NMult -> 6
+    NDiv -> 6
+    NPlus -> 7
+    NMinus -> 7
+    NUpdate -> 9
+    NLt -> 10
+    NLte -> 10
+    NGt -> 10
+    NGte -> 10
+    NEq -> 11
+    NNEq -> 11
+    NAnd -> 12
+    NOr -> 13
+    NImpl -> 14
+
+paren :: String -> String
+paren s = "(" ++ s ++ ")"
+
+parenIf :: Bool -> String -> String
+parenIf cond = if cond then paren else id
+
 bindingIndent :: Binding NExpr -> String
 bindingIndent b = case b of
     NamedVar path val -> pathIndent path ++ " = " ++ exprIndent val ++ ";"
@@ -95,7 +148,8 @@ unOpStr op = case op of
     NNot -> "!"
 
 unaryOpIndent :: NUnaryOp -> NExpr -> String
-unaryOpIndent op ex = unOpStr op ++ "(" ++ exprIndent ex ++ ")"
+unaryOpIndent op ex =
+    unOpStr op ++ parenIf (unaryPrio op < exprPrio ex) (exprIndent ex)
 
 binOpStr :: NBinaryOp -> String
 binOpStr op = case op of

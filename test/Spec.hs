@@ -63,6 +63,7 @@ main = hspec $ do
         it "indents operator-based expressions" $ do
             exprIndent (parseStr "-(1+2+3-5*6 == 7 && 8 > 9)") `shouldBe`
                 "-((((((1 + 2) + 3) - (5 * 6)) == 7) && (8 > 9)))"
+            exprIndent (parseStr "-3") `shouldBe` "-3"
         it "indents select expressions" $ do
             exprIndent (parseStr "({}.a or {b=1;}).b") `shouldBe`
                 "(({}).a or { b = 1; }).b"
