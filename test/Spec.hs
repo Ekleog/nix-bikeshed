@@ -44,6 +44,10 @@ main = hspec $ do
             exprIndent (parseStr "{inherit foo;}") `shouldBe` "{ inherit foo; }"
             exprIndent (parseStr "{inherit (x) a b c;}") `shouldBe`
                 "{ inherit (x) a b c; }"
+            exprIndent (parseStr "{${a}=3;}") `shouldBe` "{ ${a} = 3; }"
+            exprIndent (parseStr "{\"${a}\"=3;}") `shouldBe` "{ \"${a}\" = 3; }"
+            exprIndent (parseStr "{\"a${a}b\"=3;}") `shouldBe`
+                "{ \"a${a}b\" = 3; }"
         it "indents symbols" $ do
             exprIndent (parseStr "a-b") `shouldBe` "a-b"
             exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{ a = b; b = a; }"

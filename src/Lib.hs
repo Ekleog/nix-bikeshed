@@ -67,8 +67,9 @@ pathIndent p = intercalate "." $ map keyNameIndent p
 
 keyNameIndent :: NKeyName NExpr -> String
 keyNameIndent kn = case kn of
-    DynamicKey _ -> "non implemented"
     StaticKey k -> T.unpack k
+    DynamicKey (Plain s) -> stringIndent s
+    DynamicKey (Antiquoted e) -> "${" ++ exprIndent e ++ "}"
 
 atomIndent :: NAtom -> String
 atomIndent a = case a of
@@ -78,16 +79,16 @@ atomIndent a = case a of
     NNull -> "null"
     NUri t -> T.unpack t
 
+-- TODO: escape the text
 stringIndent :: NString NExpr -> String
 stringIndent s = case s of
     DoubleQuoted t -> stringIndent (Indented t) -- ignore string type
     Indented t -> "\"" ++ concatMap antiquotedIndent t ++ "\""
 
--- TODO: escape the text
 antiquotedIndent :: Antiquoted T.Text NExpr -> String
 antiquotedIndent a = case a of
     Plain t -> T.unpack t
-    Antiquoted e -> "non implemented"
+    Antiquoted e -> "${" ++ exprIndent e ++ "}"
 
 unaryOpIndent :: NUnaryOp -> NExpr -> String
 unaryOpIndent op ex = case op of
