@@ -71,7 +71,7 @@ main = hspec $ do
                 "{ a = 2; }.a or (3 + 3)"
         it "indents ?-expressions" $ do
             exprIndent (parseStr "{a=1;}?a && {} ? b") `shouldBe`
-                "({ a = 1; }) ? a && ({}) ? b"
+                "{ a = 1; } ? a && {} ? b"
         it "indents lambdas" $ do
             exprIndent (parseStr "foo: bar: foo+bar") `shouldBe`
                 "foo: bar: foo + bar"

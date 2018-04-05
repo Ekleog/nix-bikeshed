@@ -68,7 +68,7 @@ exprPrio expr = case expr of
     Fix (NSelect _ _ _) -> selectPrio
     Fix (NApp _ _) -> 2
     Fix (NUnary op _) -> unaryPrio op
-    Fix (NHasAttr _ _) -> 4
+    Fix (NHasAttr _ _) -> hasAttrPrio
     Fix (NBinary op _ _) -> binaryPrio op
     -- No actual priority issue on these, they bind less
     Fix (NAbs _ _) -> 100
@@ -84,6 +84,9 @@ unaryPrio :: NUnaryOp -> Int
 unaryPrio op = case op of
     NNeg -> 3
     NNot -> 8
+
+hasAttrPrio :: Int
+hasAttrPrio = 4
 
 binaryPrio :: NBinaryOp -> Int
 binaryPrio op = case op of
@@ -187,7 +190,9 @@ selectIndent set attr def =
           def
 
 hasAttrIndent :: NExpr -> NAttrPath NExpr -> String
-hasAttrIndent set attr = "(" ++ exprIndent set ++ ") ? " ++ pathIndent attr
+hasAttrIndent set attr =
+    parenIf (hasAttrPrio <= exprPrio set) (exprIndent set) ++
+    " ? " ++ pathIndent attr
 
 absIndent :: Params NExpr -> NExpr -> String
 absIndent par ex = paramIndent par ++ ": " ++ exprIndent ex
