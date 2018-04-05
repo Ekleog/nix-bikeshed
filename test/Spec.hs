@@ -50,3 +50,6 @@ main = hspec $ do
             exprIndent (parseStr "./foo.bar") `shouldBe` "./foo.bar"
         it "indents environment paths" $ do
             exprIndent (parseStr "<nixpkgs/nixos>") `shouldBe` "<nixpkgs/nixos>"
+        it "indents operator-based expressions" $ do
+            exprIndent (parseStr "-(1+2+3-5*6 == 7 && 8 > 9)") `shouldBe`
+                "-((((((1 + 2) + 3) - (5 * 6)) == 7) && (8 > 9)))"

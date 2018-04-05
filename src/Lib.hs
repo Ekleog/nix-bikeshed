@@ -40,8 +40,8 @@ exprIndent expr = case expr of
     Fix (NRecSet binds) -> "rec {" ++ concatMap bindingIndent binds ++ "}"
     Fix (NLiteralPath p) -> p
     Fix (NEnvPath p) -> "<" ++ p ++ ">"
-    Fix (NUnary _ _) -> "non implemented"
-    Fix (NBinary _ _ _) -> "non implemented"
+    Fix (NUnary op ex) -> unaryOpIndent op ex
+    Fix (NBinary op l r) -> binaryOpIndent op l r
     Fix (NSelect _ _ _) -> "non implemented"
     Fix (NHasAttr _ _) -> "non implemented"
     Fix (NAbs _ _) -> "non implemented"
@@ -82,3 +82,26 @@ antiquotedIndent :: Antiquoted T.Text NExpr -> String
 antiquotedIndent a = case a of
     Plain t -> T.unpack t
     Antiquoted e -> "non implemented"
+
+unaryOpIndent :: NUnaryOp -> NExpr -> String
+unaryOpIndent op ex = case op of
+    NNeg -> "-(" ++ exprIndent ex ++ ")"
+    NNot -> "!(" ++ exprIndent ex ++ ")"
+
+binaryOpIndent :: NBinaryOp -> NExpr -> NExpr -> String
+binaryOpIndent op l r = case op of
+    NEq -> "(" ++ exprIndent l ++ " == " ++ exprIndent r ++ ")"
+    NNEq -> "(" ++ exprIndent l ++ " != " ++ exprIndent r ++ ")"
+    NLt -> "(" ++ exprIndent l ++ " < " ++ exprIndent r ++ ")"
+    NLte -> "(" ++ exprIndent l ++ " <= " ++ exprIndent r ++ ")"
+    NGt -> "(" ++ exprIndent l ++ " > " ++ exprIndent r ++ ")"
+    NGte -> "(" ++ exprIndent l ++ " >= " ++ exprIndent r ++ ")"
+    NAnd -> "(" ++ exprIndent l ++ " && " ++ exprIndent r ++ ")"
+    NOr -> "(" ++ exprIndent l ++ " || " ++ exprIndent r ++ ")"
+    NImpl -> "(" ++ exprIndent l ++ " -> " ++ exprIndent r ++ ")"
+    NUpdate -> "(" ++ exprIndent l ++ " // " ++ exprIndent r ++ ")"
+    NPlus -> "(" ++ exprIndent l ++ " + " ++ exprIndent r ++ ")"
+    NMinus -> "(" ++ exprIndent l ++ " - " ++ exprIndent r ++ ")"
+    NMult -> "(" ++ exprIndent l ++ " * " ++ exprIndent r ++ ")"
+    NDiv -> "(" ++ exprIndent l ++ " / " ++ exprIndent r ++ ")"
+    NConcat -> "(" ++ exprIndent l ++ " ++ " ++ exprIndent r ++ ")"
