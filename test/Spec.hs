@@ -8,6 +8,11 @@ import Nix.Expr
 
 import Test.Hspec
 
+lineIndentsTo :: String -> String -> Expectation
+lineIndentsTo a b = do
+    exprI (parseStr a) `shouldBe` b
+    exprL (parseStr a) `shouldBe` length b
+
 main :: IO ()
 main = hspec $ do
     describe "parseStr" $ do
@@ -28,74 +33,63 @@ main = hspec $ do
 
     describe "exprI" $ do
         it "indents constants" $ do
-            exprI (parseStr "42") `shouldBe` "42"
-            exprI (parseStr "true") `shouldBe` "true"
-            exprI (parseStr "false") `shouldBe` "false"
-            exprI (parseStr "null") `shouldBe` "null"
-            exprI (parseStr "https://example.org") `shouldBe`
-                "https://example.org"
+            "42" `lineIndentsTo` "42"
+            "true" `lineIndentsTo` "true"
+            "false" `lineIndentsTo` "false"
+            "null" `lineIndentsTo` "null"
+            "https://example.org" `lineIndentsTo` "https://example.org"
         it "indents strings" $ do
-            exprI (parseStr "\"foo bar\"") `shouldBe` "\"foo bar\""
-            exprI (parseStr "''foo bar''") `shouldBe` "\"foo bar\""
-            exprI (parseStr "''foo\"bar''") `shouldBe` "\"foo\\\"bar\""
-            exprI (parseStr "''foo\"bar''") `shouldBe` "\"foo\\\"bar\""
+            "\"foo bar\"" `lineIndentsTo` "\"foo bar\""
+            "''foo bar''" `lineIndentsTo` "\"foo bar\""
+            "''foo\"bar''" `lineIndentsTo` "\"foo\\\"bar\""
+            "''foo\"bar''" `lineIndentsTo` "\"foo\\\"bar\""
         it "indents lists" $ do
-            exprI (parseStr "[1 2 3]") `shouldBe` "[1 2 3]"
+            "[1 2 3]" `lineIndentsTo` "[1 2 3]"
         it "indents sets" $ do
-            exprI (parseStr "{a=3;c=5;}") `shouldBe` "{ a = 3; c = 5; }"
-            exprI (parseStr "{inherit foo;}") `shouldBe` "{ inherit foo; }"
-            exprI (parseStr "{inherit (x) a b c;}") `shouldBe`
-                "{ inherit (x) a b c; }"
-            exprI (parseStr "{${a}=3;}") `shouldBe` "{ ${a} = 3; }"
-            exprI (parseStr "{\"${a}\"=3;}") `shouldBe` "{ \"${a}\" = 3; }"
-            exprI (parseStr "{\"a${a}b\"=3;}") `shouldBe`
-                "{ \"a${a}b\" = 3; }"
+            "{a=3;c=5;}" `lineIndentsTo` "{ a = 3; c = 5; }"
+            "{inherit foo;}" `lineIndentsTo` "{ inherit foo; }"
+            "{inherit (x) a b c;}" `lineIndentsTo` "{ inherit (x) a b c; }"
+            "{${a}=3;}" `lineIndentsTo` "{ ${a} = 3; }"
+            "{\"${a}\"=3;}" `lineIndentsTo` "{ \"${a}\" = 3; }"
+            "{\"a${a}b\"=3;}" `lineIndentsTo` "{ \"a${a}b\" = 3; }"
         it "indents symbols" $ do
-            exprI (parseStr "a-b") `shouldBe` "a-b"
-            exprI (parseStr "{a=b;b=a;}") `shouldBe` "{ a = b; b = a; }"
+            "a-b" `lineIndentsTo` "a-b"
+            "{a=b;b=a;}" `lineIndentsTo` "{ a = b; b = a; }"
         it "indents recursive sets" $ do
-            exprI (parseStr "rec{a=b;b=a;}") `shouldBe`
-                "rec { a = b; b = a; }"
+            "rec{a=b;b=a;}" `lineIndentsTo` "rec { a = b; b = a; }"
         it "indents literal paths" $ do
-            exprI (parseStr "./foo.bar") `shouldBe` "./foo.bar"
+            "./foo.bar" `lineIndentsTo` "./foo.bar"
         it "indents environment paths" $ do
-            exprI (parseStr "<nixpkgs/nixos>") `shouldBe` "<nixpkgs/nixos>"
+            "<nixpkgs/nixos>" `lineIndentsTo` "<nixpkgs/nixos>"
         it "indents operator-based expressions" $ do
-            exprI (parseStr "-(1+2+3-5*6 == 7 && 8 > 9)") `shouldBe`
+            "-(1+2+3-5*6 == 7 && 8 > 9)" `lineIndentsTo`
                 "-(1 + 2 + 3 - 5 * 6 == 7 && 8 > 9)"
-            exprI (parseStr "-3") `shouldBe` "-3"
-            exprI (parseStr "1+2+(3+4)") `shouldBe` "1 + 2 + 3 + 4"
-            exprI (parseStr "1+2-(3+4)") `shouldBe` "1 + 2 - (3 + 4)"
+            "-3" `lineIndentsTo` "-3"
+            "1+2+(3+4)" `lineIndentsTo` "1 + 2 + 3 + 4"
+            "1+2-(3+4)" `lineIndentsTo` "1 + 2 - (3 + 4)"
         it "indents select expressions" $ do
-            exprI (parseStr "({}.a or {b=1;}).b") `shouldBe`
-                "({}.a or { b = 1; }).b"
-            exprI (parseStr "{a=2;}.a or (3+3)") `shouldBe`
-                "{ a = 2; }.a or (3 + 3)"
+            "({}.a or {b=1;}).b" `lineIndentsTo` "({}.a or { b = 1; }).b"
+            "{a=2;}.a or (3+3)" `lineIndentsTo` "{ a = 2; }.a or (3 + 3)"
         it "indents ?-expressions" $ do
-            exprI (parseStr "{a=1;}?a && {} ? b") `shouldBe`
-                "{ a = 1; } ? a && {} ? b"
+            "{a=1;}?a && {} ? b" `lineIndentsTo` "{ a = 1; } ? a && {} ? b"
         it "indents lambdas" $ do
-            exprI (parseStr "foo: bar: foo+bar") `shouldBe`
-                "foo: bar: foo + bar"
-        it "indents function applications" $ do
-            exprI (parseStr "(foo: foo) 3") `shouldBe`
-                "(foo: foo) 3"
-            exprI (parseStr "let foo = x: (x +1); in foo  3") `shouldBe`
+            "foo: bar: foo+bar" `lineIndentsTo` "foo: bar: foo + bar"
+        it "indents inline function applications" $ do
+            "(foo: foo) 3" `lineIndentsTo` "(foo: foo) 3"
+        it "indents out-of-line function applications" $ do
+            "let foo = x: (x +1); in foo  3" `lineIndentsTo`
                 "let foo = x: x + 1; in foo 3"
         it "indents let expressions" $ do
-            exprI (parseStr "let a=1; in a") `shouldBe`
-                "let a = 1; in a"
+            "let a=1; in a" `lineIndentsTo` "let a = 1; in a"
         it "indents if-expressions" $ do
-            exprI (parseStr "if  a==b then 0 else 1") `shouldBe`
-                "if a == b then 0 else 1"
+            "if  a==b then 0 else 1" `lineIndentsTo` "if a == b then 0 else 1"
         it "indents with-blocks" $ do
-            exprI (parseStr "with {}; 12") `shouldBe`
-                "with {}; 12"
+            "with {}; 12" `lineIndentsTo` "with {}; 12"
         it "indents assertions" $ do
-            exprI (parseStr "assert 1==2; null") `shouldBe`
-                "assert 1 == 2; null"
+            "assert 1==2; null" `lineIndentsTo` "assert 1 == 2; null"
         it "indents parameter sets" $ do
-            exprI (parseStr "{foo, bar?0, baz?{x=1;}}: baz") `shouldBe`
+            "{foo, bar?0, baz?{x=1;}}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo }: baz"
-            exprI (parseStr "{foo, bar?0, baz?{x=1;},...}: baz") `shouldBe`
+        it "indents variadic parameter sets" $ do
+            "{foo, bar?0, baz?{x=1;},...}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo, ... }: baz"

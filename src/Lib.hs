@@ -31,6 +31,7 @@ parseStr s = case parseNixString s of
 indent :: NExpr -> String
 indent a = trace (show a) $ exprI a
 
+-- *I functions return the string that fits the constraints
 exprI :: NExpr -> String
 exprI expr = case expr of
     Fix (NConstant c) -> atomI c
@@ -51,6 +52,29 @@ exprI expr = case expr of
     Fix (NIf cond then_ else_) -> ifI cond then_ else_
     Fix (NWith set expr) -> stmtI "with" set expr
     Fix (NAssert test expr) -> stmtI "assert" test expr
+
+-- *L functions return the length the expression would take if put all on one
+-- line
+exprL :: NExpr -> Int
+exprL expr = case expr of
+    Fix (NConstant c) -> atomL c
+    Fix (NStr s) -> stringL s
+    Fix (NSym s) -> T.length s
+    Fix (NList vals) -> 1 + length vals + sum (map exprL vals)
+    Fix (NSet binds) -> setL False binds
+    Fix (NRecSet binds) -> setL True binds
+    Fix (NLiteralPath p) -> length p
+    Fix (NEnvPath p) -> 2 + length p
+    Fix (NUnary op ex) -> unaryOpL op ex
+    Fix (NBinary op l r) -> binaryOpL op l r
+    Fix (NSelect set attr def) -> selectL set attr def
+    Fix (NHasAttr set attr) -> hasAttrL set attr
+    Fix (NAbs param expr) -> absL param expr
+    Fix (NApp f x) -> appL f x
+    Fix (NLet binds ex) -> letL binds ex
+    Fix (NIf cond then_ else_) -> ifL cond then_ else_
+    Fix (NWith set expr) -> stmtL 4 set expr
+    Fix (NAssert test expr) -> stmtL 6 test expr
 
 -- Less binds stronger
 exprPrio :: NExpr -> Int
@@ -141,14 +165,30 @@ bindingI b = case b of
         "inherit (" ++ exprI s ++ ") " ++
             intercalate " " (map keyNameI vars) ++ ";"
 
+bindingL :: Binding NExpr -> Int
+bindingL b = case b of
+    NamedVar path val -> 4 + pathL path + exprL val
+    Inherit set vars ->
+        8 + length vars +
+        maybe 0 (\s -> 3 + exprL s) set + sum (map keyNameL vars)
+
 pathI :: NAttrPath NExpr -> String
 pathI p = intercalate "." $ map keyNameI p
+
+pathL :: NAttrPath NExpr -> Int
+pathL p = length p - 1 + sum (map keyNameL p)
 
 keyNameI :: NKeyName NExpr -> String
 keyNameI kn = case kn of
     StaticKey k -> T.unpack k
     DynamicKey (Plain s) -> stringI s
     DynamicKey (Antiquoted e) -> "${" ++ exprI e ++ "}"
+
+keyNameL :: NKeyName NExpr -> Int
+keyNameL kn = case kn of
+    StaticKey k -> T.length k
+    DynamicKey (Plain s) -> stringL s
+    DynamicKey (Antiquoted e) -> 3 + exprL e
 
 atomI :: NAtom -> String
 atomI a = case a of
@@ -158,15 +198,33 @@ atomI a = case a of
     NNull -> "null"
     NUri t -> T.unpack t
 
+atomL :: NAtom -> Int
+atomL a = case a of
+    NInt i -> length $ show i
+    NBool True -> 4
+    NBool False -> 5
+    NNull -> 4
+    NUri t -> T.length t
+
 stringI :: NString NExpr -> String
 stringI s = case s of
     DoubleQuoted t -> stringI (Indented t) -- ignore string type
-    Indented t -> "\"" ++ concatMap escapeAntiquoted t ++ "\""
+    Indented t -> "\"" ++ concatMap escapeAntiquotedI t ++ "\""
 
-escapeAntiquoted :: Antiquoted T.Text NExpr -> String
-escapeAntiquoted a = case a of
+stringL :: NString NExpr -> Int
+stringL s = case s of
+    DoubleQuoted t -> stringL (Indented t) -- ignore string type
+    Indented t -> 2 + sum (map escapeAntiquotedL t)
+
+escapeAntiquotedI :: Antiquoted T.Text NExpr -> String
+escapeAntiquotedI a = case a of
     Plain t -> tail $ init $ show $ T.unpack t
     Antiquoted e -> "${" ++ exprI e ++ "}"
+
+escapeAntiquotedL :: Antiquoted T.Text NExpr -> Int
+escapeAntiquotedL a = case a of
+    Plain t -> length (show $ T.unpack t) - 2
+    Antiquoted e -> 3 + exprL e
 
 unOpStr :: NUnaryOp -> String
 unOpStr op = case op of
@@ -176,6 +234,11 @@ unOpStr op = case op of
 unaryOpI :: NUnaryOp -> NExpr -> String
 unaryOpI op ex =
     unOpStr op ++ parenIf (unaryPrio op < exprPrio ex) (exprI ex)
+
+unaryOpL :: NUnaryOp -> NExpr -> Int
+unaryOpL op ex =
+    length (unOpStr op) + exprL ex +
+    (if unaryPrio op < exprPrio ex then 2 else 0)
 
 binOpStr :: NBinaryOp -> String
 binOpStr op = case op of
@@ -214,6 +277,16 @@ binaryOpI op l r =
         )
     ) (exprI r)
 
+binaryOpL :: NBinaryOp -> NExpr -> NExpr -> Int
+binaryOpL op l r =
+    exprL l + exprL r + length (binOpStr op) + 2 +
+    (if binaryPrio op < exprPrio l || (
+            binaryPrio op == exprPrio l && not (associates (binOpOf l) op))
+    then 2 else 0) +
+    (if binaryPrio op < exprPrio r || (
+            binaryPrio op == exprPrio r && not (associates op (binOpOf r)))
+    then 2 else 0)
+
 selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectI set attr def =
     parenIf (selectPrio <= exprPrio set) (exprI set) ++
@@ -222,19 +295,38 @@ selectI set attr def =
           (\x -> " or " ++ parenIf (selectPrio <= exprPrio x) (exprI x))
           def
 
+selectL :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> Int
+selectL set attr def =
+    1 + (if selectPrio <= exprPrio set then 2 else 0) + exprL set + pathL attr +
+    maybe 0
+          (\x -> 4 + (if (selectPrio <= exprPrio x) then 2 else 0) + exprL x)
+          def
+
 hasAttrI :: NExpr -> NAttrPath NExpr -> String
 hasAttrI set attr =
     parenIf (hasAttrPrio <= exprPrio set) (exprI set) ++
     " ? " ++ pathI attr
 
+hasAttrL :: NExpr -> NAttrPath NExpr -> Int
+hasAttrL set attr =
+    3 + (if hasAttrPrio < exprPrio set then 2 else 0) + exprL set + pathL attr
+
 absI :: Params NExpr -> NExpr -> String
 absI par ex = paramI par ++ ": " ++ exprI ex
+
+absL :: Params NExpr -> NExpr -> Int
+absL par ex = paramL par + 2 + exprL ex
 
 paramI :: Params NExpr -> String
 paramI par = case par of
     Param p -> T.unpack p
     ParamSet set Nothing -> paramSetI set
     ParamSet set (Just n) -> paramSetI set ++ " @ " ++ T.unpack n
+
+paramL :: Params NExpr -> Int
+paramL par = case par of
+    Param p -> T.length p
+    ParamSet set name -> paramSetL set + maybe 0 (\n -> 3 + T.length n) name
 
 paramSetI :: ParamSet NExpr -> String
 paramSetI set = case set of
@@ -247,9 +339,23 @@ paramSetI set = case set of
                 Just e -> T.unpack k ++ " ? " ++ exprI e
             ) (M.toList set))
 
+paramSetL :: ParamSet NExpr -> Int
+paramSetL set = case set of
+        FixedParamSet m -> 4 + impl (M.toList m)
+        VariadicParamSet m -> 9 + impl (M.toList m)
+    where
+        impl l =
+            2 * (length l - 1) +
+            sum (map (
+                \(k, x) -> T.length k + maybe 0 (\e -> 3 + exprL e) x
+            ) l)
+
 appI :: NExpr -> NExpr -> String
 appI f x =
     parenIf (appPrio < exprPrio f) (exprI f) ++ " " ++ exprI x
+
+appL :: NExpr -> NExpr -> Int
+appL f x = (if appPrio < exprPrio f then 2 else 0) + exprL f + 1 + exprL x
 
 setI :: Bool -> [Binding NExpr] -> String
 setI rec binds =
@@ -257,15 +363,29 @@ setI rec binds =
     (if binds == [] then "{}"
      else "{ " ++ intercalate " " (map bindingI binds) ++ " }")
 
+setL :: Bool -> [Binding NExpr] -> Int
+setL rec binds =
+    (if rec then 4 else 0) +
+    (if binds == [] then 2 else 3 + length binds + sum (map bindingL binds))
+
 letI :: [Binding NExpr] -> NExpr -> String
 letI binds ex =
     "let " ++ intercalate " " (map bindingI binds) ++ " in " ++
     exprI ex
+
+letL :: [Binding NExpr] -> NExpr -> Int
+letL binds ex = 7 + length binds + exprL ex + sum (map bindingL binds)
 
 ifI :: NExpr -> NExpr -> NExpr -> String
 ifI cond then_ else_ =
     "if " ++ exprI cond ++ " then " ++ exprI then_ ++
     " else " ++ exprI else_;
 
+ifL :: NExpr -> NExpr -> NExpr -> Int
+ifL c t e = 15 + exprL c + exprL t + exprL e
+
 stmtI :: String -> NExpr -> NExpr -> String
 stmtI kw it expr = kw ++ " " ++ exprI it ++ "; " ++ exprI expr
+
+stmtL :: Int -> NExpr -> NExpr -> Int
+stmtL kwlen it expr = kwlen + 3 + exprL it + exprL expr
