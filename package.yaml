@@ -21,6 +21,7 @@ description:         Please see the README on Github at <https://github.com/Ekle
 
 dependencies:
 - base >= 4.7 && < 5
+- hnix >= 0.4 && < 0.5
 
 library:
   source-dirs: src
