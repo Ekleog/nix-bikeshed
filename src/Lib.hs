@@ -109,6 +109,24 @@ binaryPrio op = case op of
     NOr -> 13
     NImpl -> 14
 
+associates :: NBinaryOp -> NBinaryOp -> Bool
+associates l r = case (l, r) of
+    -- *, /
+    (NMult, NMult) -> True
+    (NMult, NDiv) -> True
+    (NDiv, NMult) -> False
+    (NDiv, NDiv) -> False
+    -- +, -
+    (NPlus, NPlus) -> True
+    (NPlus, NMinus) -> True
+    (NMinus, NPlus) -> False
+    (NMinus, NMinus) -> False
+    -- ==, !=
+    (NEq, NEq) -> False
+    (NEq, NNEq) -> False
+    (NNEq, NEq) -> False
+    (NNEq, NNEq) -> False
+
 paren :: String -> String
 paren s = "(" ++ s ++ ")"
 
@@ -178,11 +196,24 @@ binOpStr op = case op of
     NDiv -> "/"
     NConcat -> "++"
 
+binOpOf :: NExpr -> NBinaryOp
+binOpOf (Fix (NBinary op _ _)) = op
+
 binaryOpI :: NBinaryOp -> NExpr -> NExpr -> String
 binaryOpI op l r =
-    parenIf (binaryPrio op <= exprPrio l) (exprI l) ++ " " ++
+    parenIf (
+        binaryPrio op < exprPrio l || (
+            binaryPrio op == exprPrio l &&
+            not (associates (binOpOf l) op)
+        )
+    ) (exprI l) ++ " " ++
     binOpStr op ++ " " ++
-    parenIf (binaryPrio op <= exprPrio r) (exprI r)
+    parenIf (
+        binaryPrio op < exprPrio r || (
+            binaryPrio op == exprPrio r &&
+            not (associates op (binOpOf r))
+        )
+    ) (exprI r)
 
 selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectI set attr def =

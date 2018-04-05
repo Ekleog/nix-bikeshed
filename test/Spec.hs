@@ -62,8 +62,10 @@ main = hspec $ do
             exprI (parseStr "<nixpkgs/nixos>") `shouldBe` "<nixpkgs/nixos>"
         it "indents operator-based expressions" $ do
             exprI (parseStr "-(1+2+3-5*6 == 7 && 8 > 9)") `shouldBe`
-                "-(((1 + 2) + 3) - 5 * 6 == 7 && 8 > 9)"
+                "-(1 + 2 + 3 - 5 * 6 == 7 && 8 > 9)"
             exprI (parseStr "-3") `shouldBe` "-3"
+            exprI (parseStr "1+2+(3+4)") `shouldBe` "1 + 2 + 3 + 4"
+            exprI (parseStr "1+2-(3+4)") `shouldBe` "1 + 2 - (3 + 4)"
         it "indents select expressions" $ do
             exprI (parseStr "({}.a or {b=1;}).b") `shouldBe`
                 "({}.a or { b = 1; }).b"
