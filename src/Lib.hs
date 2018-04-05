@@ -55,7 +55,11 @@ exprIndent expr = case expr of
 bindingIndent :: Binding NExpr -> String
 bindingIndent b = case b of
     NamedVar path val -> pathIndent path ++ " = " ++ exprIndent val ++ ";"
-    Inherit _ _ -> "non implemented"
+    Inherit Nothing vars ->
+        "inherit " ++ intercalate " " (map keyNameIndent vars) ++ ";"
+    Inherit (Just s) vars ->
+        "inherit (" ++ exprIndent s ++ ") " ++
+            intercalate " " (map keyNameIndent vars) ++ ";"
 
 pathIndent :: NAttrPath NExpr -> String
 pathIndent p = intercalate "." $ map keyNameIndent p
