@@ -89,10 +89,13 @@ escapeAntiquoted a = case a of
     Plain t -> tail $ init $ show $ T.unpack t
     Antiquoted e -> "${" ++ exprIndent e ++ "}"
 
+unOpStr :: NUnaryOp -> String
+unOpStr op = case op of
+    NNeg -> "-"
+    NNot -> "!"
+
 unaryOpIndent :: NUnaryOp -> NExpr -> String
-unaryOpIndent op ex = case op of
-    NNeg -> "-(" ++ exprIndent ex ++ ")"
-    NNot -> "!(" ++ exprIndent ex ++ ")"
+unaryOpIndent op ex = unOpStr op ++ "(" ++ exprIndent ex ++ ")"
 
 binOpStr :: NBinaryOp -> String
 binOpStr op = case op of
