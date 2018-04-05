@@ -42,7 +42,7 @@ exprIndent expr = case expr of
     Fix (NEnvPath p) -> "<" ++ p ++ ">"
     Fix (NUnary op ex) -> unaryOpIndent op ex
     Fix (NBinary op l r) -> binaryOpIndent op l r
-    Fix (NSelect _ _ _) -> "non implemented"
+    Fix (NSelect set attr def) -> selectIndent set attr def
     Fix (NHasAttr _ _) -> "non implemented"
     Fix (NAbs _ _) -> "non implemented"
     Fix (NApp _ _) -> "non implemented"
@@ -105,3 +105,8 @@ binaryOpIndent op l r = case op of
     NMult -> "(" ++ exprIndent l ++ " * " ++ exprIndent r ++ ")"
     NDiv -> "(" ++ exprIndent l ++ " / " ++ exprIndent r ++ ")"
     NConcat -> "(" ++ exprIndent l ++ " ++ " ++ exprIndent r ++ ")"
+
+selectIndent :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
+selectIndent set attr def =
+    "(" ++ exprIndent set ++ ")." ++ pathIndent attr ++
+        maybe "" (\x -> " or " ++ exprIndent x) def
