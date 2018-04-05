@@ -159,10 +159,8 @@ parenIf cond = if cond then paren else id
 bindingI :: Binding NExpr -> String
 bindingI b = case b of
     NamedVar path val -> pathI path ++ " = " ++ exprI val ++ ";"
-    Inherit Nothing vars ->
-        "inherit " ++ intercalate " " (map keyNameI vars) ++ ";"
-    Inherit (Just s) vars ->
-        "inherit (" ++ exprI s ++ ") " ++
+    Inherit set vars ->
+        "inherit " ++ maybe "" (\s -> "(" ++ exprI s ++ ") ") set ++
             intercalate " " (map keyNameI vars) ++ ";"
 
 bindingL :: Binding NExpr -> Int
@@ -320,8 +318,7 @@ absL par ex = paramL par + 2 + exprL ex
 paramI :: Params NExpr -> String
 paramI par = case par of
     Param p -> T.unpack p
-    ParamSet set Nothing -> paramSetI set
-    ParamSet set (Just n) -> paramSetI set ++ " @ " ++ T.unpack n
+    ParamSet set name -> paramSetI set ++ maybe "" T.unpack name
 
 paramL :: Params NExpr -> Int
 paramL par = case par of
@@ -334,9 +331,8 @@ paramSetI set = case set of
         VariadicParamSet m -> "{ " ++ impl m ++ ", ... }"
     where
         impl set =
-            intercalate ", " (map (\(k, x) -> case x of
-                Nothing -> T.unpack k
-                Just e -> T.unpack k ++ " ? " ++ exprI e
+            intercalate ", " (map (\(k, x) ->
+                T.unpack k ++ maybe "" (\e -> " ? " ++ exprI e) x
             ) (M.toList set))
 
 paramSetL :: ParamSet NExpr -> Int
