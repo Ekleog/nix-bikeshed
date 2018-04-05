@@ -94,23 +94,26 @@ unaryOpIndent op ex = case op of
     NNeg -> "-(" ++ exprIndent ex ++ ")"
     NNot -> "!(" ++ exprIndent ex ++ ")"
 
+binOpStr :: NBinaryOp -> String
+binOpStr op = case op of
+    NEq -> "=="
+    NNEq -> "!="
+    NLt -> "<"
+    NLte -> "<="
+    NGt -> ">"
+    NGte -> ">="
+    NAnd -> "&&"
+    NOr -> "||"
+    NImpl -> "->"
+    NUpdate -> "//"
+    NPlus -> "+"
+    NMinus -> "-"
+    NMult -> "*"
+    NDiv -> "/"
+    NConcat -> "++"
+
 binaryOpIndent :: NBinaryOp -> NExpr -> NExpr -> String
-binaryOpIndent op l r = case op of
-    NEq -> "(" ++ exprIndent l ++ " == " ++ exprIndent r ++ ")"
-    NNEq -> "(" ++ exprIndent l ++ " != " ++ exprIndent r ++ ")"
-    NLt -> "(" ++ exprIndent l ++ " < " ++ exprIndent r ++ ")"
-    NLte -> "(" ++ exprIndent l ++ " <= " ++ exprIndent r ++ ")"
-    NGt -> "(" ++ exprIndent l ++ " > " ++ exprIndent r ++ ")"
-    NGte -> "(" ++ exprIndent l ++ " >= " ++ exprIndent r ++ ")"
-    NAnd -> "(" ++ exprIndent l ++ " && " ++ exprIndent r ++ ")"
-    NOr -> "(" ++ exprIndent l ++ " || " ++ exprIndent r ++ ")"
-    NImpl -> "(" ++ exprIndent l ++ " -> " ++ exprIndent r ++ ")"
-    NUpdate -> "(" ++ exprIndent l ++ " // " ++ exprIndent r ++ ")"
-    NPlus -> "(" ++ exprIndent l ++ " + " ++ exprIndent r ++ ")"
-    NMinus -> "(" ++ exprIndent l ++ " - " ++ exprIndent r ++ ")"
-    NMult -> "(" ++ exprIndent l ++ " * " ++ exprIndent r ++ ")"
-    NDiv -> "(" ++ exprIndent l ++ " / " ++ exprIndent r ++ ")"
-    NConcat -> "(" ++ exprIndent l ++ " ++ " ++ exprIndent r ++ ")"
+binaryOpIndent op l r = "(" ++ exprIndent l ++ " " ++ binOpStr op ++ " " ++ exprIndent r ++ ")"
 
 selectIndent :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectIndent set attr def =
