@@ -62,3 +62,6 @@ main = hspec $ do
         it "indents lambdas" $ do
             exprIndent (parseStr "foo: bar: foo+bar") `shouldBe`
                 "foo: bar: (foo + bar)"
+        it "indents function applications" $ do
+            exprIndent (parseStr "(foo: foo) 3") `shouldBe`
+                "(foo: foo) 3"

@@ -47,7 +47,7 @@ exprIndent expr = case expr of
     Fix (NSelect set attr def) -> selectIndent set attr def
     Fix (NHasAttr set attr) -> hasAttrIndent set attr
     Fix (NAbs param expr) -> absIndent param expr
-    Fix (NApp _ _) -> "non implemented"
+    Fix (NApp f x) -> appIndent f x
     Fix (NLet _ _) -> "non implemented"
     Fix (NIf _ _ _) -> "non implemented"
     Fix (NWith _ _) -> "non implemented"
@@ -120,3 +120,6 @@ absIndent :: Params NExpr -> NExpr -> String
 absIndent par ex = case par of
     Param p -> T.unpack p ++ ": " ++ exprIndent ex
     ParamSet _ _ -> "non implemented"
+
+appIndent :: NExpr -> NExpr -> String
+appIndent f x = "(" ++ exprIndent f ++ ") " ++ exprIndent x
