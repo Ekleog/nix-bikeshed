@@ -259,31 +259,24 @@ binOpStr op = case op of
 binOpOf :: NExpr -> NBinaryOp
 binOpOf (Fix (NBinary op _ _)) = op
 
+binaryOpNeedsParen :: Bool -> NBinaryOp -> NExpr -> Bool
+binaryOpNeedsParen isLeftChild par child =
+    binaryPrio par < exprPrio child || (
+        binaryPrio par == exprPrio child &&
+        not ((if isLeftChild then id else flip) associates (binOpOf child) par)
+    )
+
 binaryOpI :: NBinaryOp -> NExpr -> NExpr -> String
 binaryOpI op l r =
-    parenIf (
-        binaryPrio op < exprPrio l || (
-            binaryPrio op == exprPrio l &&
-            not (associates (binOpOf l) op)
-        )
-    ) (exprI l) ++ " " ++
+    parenIf (binaryOpNeedsParen True op l) (exprI l) ++ " " ++
     binOpStr op ++ " " ++
-    parenIf (
-        binaryPrio op < exprPrio r || (
-            binaryPrio op == exprPrio r &&
-            not (associates op (binOpOf r))
-        )
-    ) (exprI r)
+    parenIf (binaryOpNeedsParen False op r) (exprI r)
 
 binaryOpL :: NBinaryOp -> NExpr -> NExpr -> Int
 binaryOpL op l r =
     exprL l + exprL r + length (binOpStr op) + 2 +
-    (if binaryPrio op < exprPrio l || (
-            binaryPrio op == exprPrio l && not (associates (binOpOf l) op))
-    then 2 else 0) +
-    (if binaryPrio op < exprPrio r || (
-            binaryPrio op == exprPrio r && not (associates op (binOpOf r)))
-    then 2 else 0)
+    (if binaryOpNeedsParen True op l then 2 else 0) +
+    (if binaryOpNeedsParen False op r then 2 else 0)
 
 selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectI set attr def =
