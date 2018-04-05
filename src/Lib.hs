@@ -48,7 +48,7 @@ exprIndent expr = case expr of
     Fix (NAbs param expr) -> absIndent param expr
     Fix (NApp f x) -> appIndent f x
     Fix (NLet binds ex) -> letIndent binds ex
-    Fix (NIf _ _ _) -> "non implemented"
+    Fix (NIf cond then_ else_) -> ifIndent cond then_ else_
     Fix (NWith _ _) -> "non implemented"
     Fix (NAssert _ _) -> "non implemented"
 
@@ -133,3 +133,8 @@ letIndent :: [Binding NExpr] -> NExpr -> String
 letIndent binds ex =
     "let " ++ intercalate " " (map bindingIndent binds) ++ " in " ++
     exprIndent ex
+
+ifIndent :: NExpr -> NExpr -> NExpr -> String
+ifIndent cond then_ else_ =
+    "if " ++ exprIndent cond ++ " then " ++ exprIndent then_ ++
+    " else " ++ exprIndent else_;

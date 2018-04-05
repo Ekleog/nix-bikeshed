@@ -68,3 +68,6 @@ main = hspec $ do
         it "indents let expressions" $ do
             exprIndent (parseStr "let a=1; in a") `shouldBe`
                 "let a = 1; in a"
+        it "indents if-expressions" $ do
+            exprIndent (parseStr "if  a==b then 0 else 1") `shouldBe`
+                "if (a == b) then 0 else 1"
