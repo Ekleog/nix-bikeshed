@@ -66,7 +66,7 @@ exprPrio expr = case expr of
     Fix (NLiteralPath _) -> 0
     Fix (NEnvPath _) -> 0
     Fix (NSelect _ _ _) -> selectPrio
-    Fix (NApp _ _) -> 2
+    Fix (NApp _ _) -> appPrio
     Fix (NUnary op _) -> unaryPrio op
     Fix (NHasAttr _ _) -> hasAttrPrio
     Fix (NBinary op _ _) -> binaryPrio op
@@ -79,6 +79,9 @@ exprPrio expr = case expr of
 
 selectPrio :: Int
 selectPrio = 1
+
+appPrio :: Int
+appPrio = 2
 
 unaryPrio :: NUnaryOp -> Int
 unaryPrio op = case op of
@@ -218,7 +221,8 @@ paramSetIndentImpl set =
     )
 
 appIndent :: NExpr -> NExpr -> String
-appIndent f x = "(" ++ exprIndent f ++ ") " ++ exprIndent x
+appIndent f x =
+    parenIf (appPrio < exprPrio f) (exprIndent f) ++ " " ++ exprIndent x
 
 setIndent :: Bool -> [Binding NExpr] -> String
 setIndent rec binds =
