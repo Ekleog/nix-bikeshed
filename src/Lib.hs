@@ -29,9 +29,22 @@ exprIndent :: NExpr -> String
 exprIndent expr = case expr of
     Fix (NConstant c) -> atomIndent c
     Fix (NStr s) -> stringIndent s
+    Fix (NSym _) -> "non implemented"
     Fix (NList vals) -> "[" ++ concatMap (\x -> exprIndent x ++ " ") vals ++ "]"
     Fix (NSet binds) -> "{" ++ concatMap bindingIndent binds ++ "}"
-    _ -> "non implemented"
+    Fix (NRecSet _) -> "non implemented"
+    Fix (NLiteralPath _) -> "non implemented"
+    Fix (NEnvPath _) -> "non implemented"
+    Fix (NUnary _ _) -> "non implemented"
+    Fix (NBinary _ _ _) -> "non implemented"
+    Fix (NSelect _ _ _) -> "non implemented"
+    Fix (NHasAttr _ _) -> "non implemented"
+    Fix (NAbs _ _) -> "non implemented"
+    Fix (NApp _ _) -> "non implemented"
+    Fix (NLet _ _) -> "non implemented"
+    Fix (NIf _ _ _) -> "non implemented"
+    Fix (NWith _ _) -> "non implemented"
+    Fix (NAssert _ _) -> "non implemented"
 
 bindingIndent :: Binding NExpr -> String
 bindingIndent b = case b of
