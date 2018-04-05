@@ -71,3 +71,6 @@ main = hspec $ do
         it "indents if-expressions" $ do
             exprIndent (parseStr "if  a==b then 0 else 1") `shouldBe`
                 "if (a == b) then 0 else 1"
+        it "indents with-blocks" $ do
+            exprIndent (parseStr "with {}; 12") `shouldBe`
+                "with {}; 12"
