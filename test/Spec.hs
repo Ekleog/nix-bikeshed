@@ -59,3 +59,6 @@ main = hspec $ do
         it "indents ?-expressions" $ do
             exprIndent (parseStr "{a=1;}?a && {} ? b") `shouldBe`
                 "(({ a = 1; }) ? a && ({}) ? b)"
+        it "indents lambdas" $ do
+            exprIndent (parseStr "foo: bar: foo+bar") `shouldBe`
+                "foo: bar: (foo + bar)"
