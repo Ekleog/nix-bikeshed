@@ -41,3 +41,6 @@ main = hspec $ do
             exprIndent (parseStr "[1 2 3]") `shouldBe` "[1 2 3 ]"
         it "indents sets" $ do
             exprIndent (parseStr "{a=3;c=5;}") `shouldBe` "{a=3;c=5;}"
+        it "indents symbols" $ do
+            exprIndent (parseStr "a-b") `shouldBe` "a-b"
+            exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{a=b;b=a;}"

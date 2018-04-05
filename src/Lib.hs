@@ -34,7 +34,7 @@ exprIndent :: NExpr -> String
 exprIndent expr = case expr of
     Fix (NConstant c) -> atomIndent c
     Fix (NStr s) -> stringIndent s
-    Fix (NSym _) -> "non implemented"
+    Fix (NSym s) -> T.unpack s
     Fix (NList vals) -> "[" ++ concatMap (\x -> exprIndent x ++ " ") vals ++ "]"
     Fix (NSet binds) -> "{" ++ concatMap bindingIndent binds ++ "}"
     Fix (NRecSet _) -> "non implemented"
