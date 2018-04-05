@@ -44,3 +44,5 @@ main = hspec $ do
         it "indents symbols" $ do
             exprIndent (parseStr "a-b") `shouldBe` "a-b"
             exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{a=b;b=a;}"
+        it "indents recursive sets" $ do
+            exprIndent (parseStr "rec{a=b;b=a;}") `shouldBe` "rec {a=b;b=a;}"

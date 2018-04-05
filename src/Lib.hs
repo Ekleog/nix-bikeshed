@@ -37,7 +37,7 @@ exprIndent expr = case expr of
     Fix (NSym s) -> T.unpack s
     Fix (NList vals) -> "[" ++ concatMap (\x -> exprIndent x ++ " ") vals ++ "]"
     Fix (NSet binds) -> "{" ++ concatMap bindingIndent binds ++ "}"
-    Fix (NRecSet _) -> "non implemented"
+    Fix (NRecSet binds) -> "rec {" ++ concatMap bindingIndent binds ++ "}"
     Fix (NLiteralPath _) -> "non implemented"
     Fix (NEnvPath _) -> "non implemented"
     Fix (NUnary _ _) -> "non implemented"
