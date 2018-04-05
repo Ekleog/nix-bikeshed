@@ -35,9 +35,11 @@ exprIndent expr = case expr of
     Fix (NConstant c) -> atomIndent c
     Fix (NStr s) -> stringIndent s
     Fix (NSym s) -> T.unpack s
-    Fix (NList vals) -> "[" ++ concatMap (\x -> exprIndent x ++ " ") vals ++ "]"
-    Fix (NSet binds) -> "{" ++ concatMap bindingIndent binds ++ "}"
-    Fix (NRecSet binds) -> "rec {" ++ concatMap bindingIndent binds ++ "}"
+    Fix (NList vals) -> "[" ++ intercalate " " (map exprIndent vals) ++ "]"
+    Fix (NSet binds) -> if binds == [] then "{}"
+                        else "{ " ++ intercalate " " (map bindingIndent binds) ++ " }"
+    Fix (NRecSet binds) -> if binds == [] then "rec {}"
+                           else "rec { " ++ intercalate " " (map bindingIndent binds) ++ " }"
     Fix (NLiteralPath p) -> p
     Fix (NEnvPath p) -> "<" ++ p ++ ">"
     Fix (NUnary op ex) -> unaryOpIndent op ex
@@ -53,11 +55,11 @@ exprIndent expr = case expr of
 
 bindingIndent :: Binding NExpr -> String
 bindingIndent b = case b of
-    NamedVar path val -> pathIndent path ++ "=" ++ exprIndent val ++ ";"
+    NamedVar path val -> pathIndent path ++ " = " ++ exprIndent val ++ ";"
     Inherit _ _ -> "non implemented"
 
 pathIndent :: NAttrPath NExpr -> String
-pathIndent p = concat $ intersperse "." $ map keyNameIndent p
+pathIndent p = intercalate "." $ map keyNameIndent p
 
 keyNameIndent :: NKeyName NExpr -> String
 keyNameIndent kn = case kn of

@@ -38,14 +38,14 @@ main = hspec $ do
             exprIndent (parseStr "\"foo bar\"") `shouldBe` "\"foo bar\""
             exprIndent (parseStr "''foo bar''") `shouldBe` "\"foo bar\""
         it "indents lists" $ do
-            exprIndent (parseStr "[1 2 3]") `shouldBe` "[1 2 3 ]"
+            exprIndent (parseStr "[1 2 3]") `shouldBe` "[1 2 3]"
         it "indents sets" $ do
-            exprIndent (parseStr "{a=3;c=5;}") `shouldBe` "{a=3;c=5;}"
+            exprIndent (parseStr "{a=3;c=5;}") `shouldBe` "{ a = 3; c = 5; }"
         it "indents symbols" $ do
             exprIndent (parseStr "a-b") `shouldBe` "a-b"
-            exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{a=b;b=a;}"
+            exprIndent (parseStr "{a=b;b=a;}") `shouldBe` "{ a = b; b = a; }"
         it "indents recursive sets" $ do
-            exprIndent (parseStr "rec{a=b;b=a;}") `shouldBe` "rec {a=b;b=a;}"
+            exprIndent (parseStr "rec{a=b;b=a;}") `shouldBe` "rec { a = b; b = a; }"
         it "indents literal paths" $ do
             exprIndent (parseStr "./foo.bar") `shouldBe` "./foo.bar"
         it "indents environment paths" $ do
@@ -55,4 +55,4 @@ main = hspec $ do
                 "-((((((1 + 2) + 3) - (5 * 6)) == 7) && (8 > 9)))"
         it "indents select expressions" $ do
             exprIndent (parseStr "({}.a or {b=1;}).b") `shouldBe`
-                "(({}).a or {b=1;}).b"
+                "(({}).a or { b = 1; }).b"
