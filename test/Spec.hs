@@ -66,7 +66,9 @@ main = hspec $ do
             exprIndent (parseStr "-3") `shouldBe` "-3"
         it "indents select expressions" $ do
             exprIndent (parseStr "({}.a or {b=1;}).b") `shouldBe`
-                "(({}).a or { b = 1; }).b"
+                "({}.a or { b = 1; }).b"
+            exprIndent (parseStr "{a=2;}.a or (3+3)") `shouldBe`
+                "{ a = 2; }.a or (3 + 3)"
         it "indents ?-expressions" $ do
             exprIndent (parseStr "{a=1;}?a && {} ? b") `shouldBe`
                 "({ a = 1; }) ? a && ({}) ? b"

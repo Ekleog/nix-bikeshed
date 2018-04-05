@@ -65,7 +65,7 @@ exprPrio expr = case expr of
     Fix (NRecSet _) -> 0
     Fix (NLiteralPath _) -> 0
     Fix (NEnvPath _) -> 0
-    Fix (NSelect _ _ _) -> 1
+    Fix (NSelect _ _ _) -> selectPrio
     Fix (NApp _ _) -> 2
     Fix (NUnary op _) -> unaryPrio op
     Fix (NHasAttr _ _) -> 4
@@ -76,6 +76,9 @@ exprPrio expr = case expr of
     Fix (NIf _ _ _) -> 100
     Fix (NWith _ _) -> 100
     Fix (NAssert _ _) -> 100
+
+selectPrio :: Int
+selectPrio = 1
 
 unaryPrio :: NUnaryOp -> Int
 unaryPrio op = case op of
@@ -177,8 +180,11 @@ binaryOpIndent op l r =
 
 selectIndent :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectIndent set attr def =
-    "(" ++ exprIndent set ++ ")." ++ pathIndent attr ++
-        maybe "" (\x -> " or " ++ exprIndent x) def
+    parenIf (selectPrio <= exprPrio set) (exprIndent set) ++
+    "." ++ pathIndent attr ++
+    maybe ""
+          (\x -> " or " ++ parenIf (selectPrio <= exprPrio x) (exprIndent x))
+          def
 
 hasAttrIndent :: NExpr -> NAttrPath NExpr -> String
 hasAttrIndent set attr = "(" ++ exprIndent set ++ ") ? " ++ pathIndent attr
