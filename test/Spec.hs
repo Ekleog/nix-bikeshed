@@ -74,3 +74,6 @@ main = hspec $ do
         it "indents with-blocks" $ do
             exprIndent (parseStr "with {}; 12") `shouldBe`
                 "with {}; 12"
+        it "indents assertions" $ do
+            exprIndent (parseStr "assert 1==2; null") `shouldBe`
+                "assert (1 == 2); null"

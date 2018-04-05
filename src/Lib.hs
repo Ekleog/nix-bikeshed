@@ -49,8 +49,8 @@ exprIndent expr = case expr of
     Fix (NApp f x) -> appIndent f x
     Fix (NLet binds ex) -> letIndent binds ex
     Fix (NIf cond then_ else_) -> ifIndent cond then_ else_
-    Fix (NWith set expr) -> withIndent set expr
-    Fix (NAssert _ _) -> "non implemented"
+    Fix (NWith set expr) -> stmtIndent "with" set expr
+    Fix (NAssert test expr) -> stmtIndent "assert" test expr
 
 bindingIndent :: Binding NExpr -> String
 bindingIndent b = case b of
@@ -139,5 +139,5 @@ ifIndent cond then_ else_ =
     "if " ++ exprIndent cond ++ " then " ++ exprIndent then_ ++
     " else " ++ exprIndent else_;
 
-withIndent :: NExpr -> NExpr -> String
-withIndent set expr = "with " ++ exprIndent set ++ "; " ++ exprIndent expr
+stmtIndent :: String -> NExpr -> NExpr -> String
+stmtIndent kw it expr = kw ++ " " ++ exprIndent it ++ "; " ++ exprIndent expr
