@@ -30,16 +30,15 @@ parseStr s = case parseNixString s of
 indent :: NExpr -> String
 indent a = trace (show a) $ exprIndent a
 
+-- TODO: handle priority of operators
 exprIndent :: NExpr -> String
 exprIndent expr = case expr of
     Fix (NConstant c) -> atomIndent c
     Fix (NStr s) -> stringIndent s
     Fix (NSym s) -> T.unpack s
     Fix (NList vals) -> "[" ++ intercalate " " (map exprIndent vals) ++ "]"
-    Fix (NSet binds) -> if binds == [] then "{}"
-                        else "{ " ++ intercalate " " (map bindingIndent binds) ++ " }"
-    Fix (NRecSet binds) -> if binds == [] then "rec {}"
-                           else "rec { " ++ intercalate " " (map bindingIndent binds) ++ " }"
+    Fix (NSet binds) -> setIndent False binds
+    Fix (NRecSet binds) -> setIndent True binds
     Fix (NLiteralPath p) -> p
     Fix (NEnvPath p) -> "<" ++ p ++ ">"
     Fix (NUnary op ex) -> unaryOpIndent op ex
@@ -48,7 +47,7 @@ exprIndent expr = case expr of
     Fix (NHasAttr set attr) -> hasAttrIndent set attr
     Fix (NAbs param expr) -> absIndent param expr
     Fix (NApp f x) -> appIndent f x
-    Fix (NLet _ _) -> "non implemented"
+    Fix (NLet binds ex) -> letIndent binds ex
     Fix (NIf _ _ _) -> "non implemented"
     Fix (NWith _ _) -> "non implemented"
     Fix (NAssert _ _) -> "non implemented"
@@ -123,3 +122,14 @@ absIndent par ex = case par of
 
 appIndent :: NExpr -> NExpr -> String
 appIndent f x = "(" ++ exprIndent f ++ ") " ++ exprIndent x
+
+setIndent :: Bool -> [Binding NExpr] -> String
+setIndent rec binds =
+    (if rec then "rec " else "") ++
+    (if binds == [] then "{}"
+     else "{ " ++ intercalate " " (map bindingIndent binds) ++ " }")
+
+letIndent :: [Binding NExpr] -> NExpr -> String
+letIndent binds ex =
+    "let " ++ intercalate " " (map bindingIndent binds) ++ " in " ++
+    exprIndent ex

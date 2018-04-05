@@ -65,3 +65,6 @@ main = hspec $ do
         it "indents function applications" $ do
             exprIndent (parseStr "(foo: foo) 3") `shouldBe`
                 "(foo: foo) 3"
+        it "indents let expressions" $ do
+            exprIndent (parseStr "let a=1; in a") `shouldBe`
+                "let a = 1; in a"
