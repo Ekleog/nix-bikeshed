@@ -208,17 +208,14 @@ paramI par = case par of
 
 paramSetI :: ParamSet NExpr -> String
 paramSetI set = case set of
-    FixedParamSet m -> "{ " ++ paramSetIImpl m ++ " }"
-    VariadicParamSet m -> "{ " ++ paramSetIImpl m ++ ", ... }"
-
-paramSetIImpl :: M.Map T.Text (Maybe NExpr) -> String
-paramSetIImpl set =
-    intercalate ", " (
-        map (\(k, x) -> case x of
-            Nothing -> T.unpack k
-            Just e -> T.unpack k ++ " ? " ++ exprI e
-        ) (M.toList set)
-    )
+        FixedParamSet m -> "{ " ++ impl m ++ " }"
+        VariadicParamSet m -> "{ " ++ impl m ++ ", ... }"
+    where
+        impl set =
+            intercalate ", " (map (\(k, x) -> case x of
+                Nothing -> T.unpack k
+                Just e -> T.unpack k ++ " ? " ++ exprI e
+            ) (M.toList set))
 
 appI :: NExpr -> NExpr -> String
 appI f x =
