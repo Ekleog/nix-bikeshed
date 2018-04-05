@@ -23,6 +23,7 @@ dependencies:
 - base >= 4.7 && < 5
 - data-fix >= 0.2 && < 0.3
 - hnix >= 0.4 && < 0.5
+- hspec >= 2.5 && < 3
 - text >= 1.2 && < 2
 
 library:

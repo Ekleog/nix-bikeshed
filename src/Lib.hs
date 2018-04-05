@@ -1,4 +1,4 @@
-module Lib (doTheThing) where
+module Lib where
 
 import Data.Fix
 import Data.List
@@ -12,15 +12,20 @@ import Nix.Parser
 
 doTheThing :: IO ()
 doTheThing = do
-    expr <- parse "test-input.nix"
+    expr <- parseFile "test-input.nix"
     putStrLn $ indent expr
 
-parse :: FilePath -> IO NExpr
-parse f = do
+parseFile :: FilePath -> IO NExpr
+parseFile f = do
     expr <- parseNixFile f
     case expr of
         Success a -> return a
         Failure e -> error $ show e
+
+parseStr :: String -> NExpr
+parseStr s = case parseNixString s of
+    Success a -> a
+    Failure e -> error $ show e
 
 indent :: NExpr -> String
 indent a = trace (show a) $ exprIndent a
