@@ -56,3 +56,6 @@ main = hspec $ do
         it "indents select expressions" $ do
             exprIndent (parseStr "({}.a or {b=1;}).b") `shouldBe`
                 "(({}).a or { b = 1; }).b"
+        it "indents ?-expressions" $ do
+            exprIndent (parseStr "{a=1;}?a && {} ? b") `shouldBe`
+                "(({ a = 1; }) ? a && ({}) ? b)"

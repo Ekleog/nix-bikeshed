@@ -45,7 +45,7 @@ exprIndent expr = case expr of
     Fix (NUnary op ex) -> unaryOpIndent op ex
     Fix (NBinary op l r) -> binaryOpIndent op l r
     Fix (NSelect set attr def) -> selectIndent set attr def
-    Fix (NHasAttr _ _) -> "non implemented"
+    Fix (NHasAttr set attr) -> hasAttrIndent set attr
     Fix (NAbs _ _) -> "non implemented"
     Fix (NApp _ _) -> "non implemented"
     Fix (NLet _ _) -> "non implemented"
@@ -112,3 +112,6 @@ selectIndent :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
 selectIndent set attr def =
     "(" ++ exprIndent set ++ ")." ++ pathIndent attr ++
         maybe "" (\x -> " or " ++ exprIndent x) def
+
+hasAttrIndent :: NExpr -> NAttrPath NExpr -> String
+hasAttrIndent set attr = "(" ++ exprIndent set ++ ") ? " ++ pathIndent attr
