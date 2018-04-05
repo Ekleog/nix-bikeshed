@@ -2,6 +2,7 @@ module Lib where
 
 import Data.Fix
 import Data.List
+import qualified Data.Map as M
 import qualified Data.Text as T
 
 import Debug.Trace
@@ -120,9 +121,27 @@ hasAttrIndent :: NExpr -> NAttrPath NExpr -> String
 hasAttrIndent set attr = "(" ++ exprIndent set ++ ") ? " ++ pathIndent attr
 
 absIndent :: Params NExpr -> NExpr -> String
-absIndent par ex = case par of
-    Param p -> T.unpack p ++ ": " ++ exprIndent ex
-    ParamSet _ _ -> "non implemented"
+absIndent par ex = paramIndent par ++ ": " ++ exprIndent ex
+
+paramIndent :: Params NExpr -> String
+paramIndent par = case par of
+    Param p -> T.unpack p
+    ParamSet set Nothing -> paramSetIndent set
+    ParamSet set (Just n) -> paramSetIndent set ++ " @ " ++ T.unpack n
+
+paramSetIndent :: ParamSet NExpr -> String
+paramSetIndent set = case set of
+    FixedParamSet m -> "{ " ++ paramSetIndentImpl m ++ " }"
+    VariadicParamSet m -> "{ " ++ paramSetIndentImpl m ++ ", ... }"
+
+paramSetIndentImpl :: M.Map T.Text (Maybe NExpr) -> String
+paramSetIndentImpl set =
+    intercalate ", " (
+        map (\(k, x) -> case x of
+            Nothing -> T.unpack k
+            Just e -> T.unpack k ++ " ? " ++ exprIndent e
+        ) (M.toList set)
+    )
 
 appIndent :: NExpr -> NExpr -> String
 appIndent f x = "(" ++ exprIndent f ++ ") " ++ exprIndent x

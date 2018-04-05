@@ -80,3 +80,8 @@ main = hspec $ do
         it "indents assertions" $ do
             exprIndent (parseStr "assert 1==2; null") `shouldBe`
                 "assert (1 == 2); null"
+        it "indents parameter sets" $ do
+            exprIndent (parseStr "{foo, bar?0, baz?{x=1;}}: baz") `shouldBe`
+                "{ bar ? 0, baz ? { x = 1; }, foo }: baz"
+            exprIndent (parseStr "{foo, bar?0, baz?{x=1;},...}: baz") `shouldBe`
+                "{ bar ? 0, baz ? { x = 1; }, foo, ... }: baz"

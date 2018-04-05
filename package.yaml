@@ -21,6 +21,7 @@ description:         Please see the README on Github at <https://github.com/Ekle
 
 dependencies:
 - base >= 4.7 && < 5
+- containers >= 0.5 && < 0.6
 - data-fix >= 0.2 && < 0.3
 - hnix >= 0.4 && < 0.5
 - hspec >= 2.5 && < 3
