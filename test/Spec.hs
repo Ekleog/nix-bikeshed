@@ -13,6 +13,14 @@ lineIndentsTo a b = do
     exprI (parseStr a) `shouldBe` b
     exprL (parseStr a) `shouldBe` length b
 
+shouldBeEquivalentTo :: String -> String -> Expectation
+shouldBeEquivalentTo a b =
+    (parseStr a `isEquivalentTo` parseStr b) `shouldBe` True
+
+shouldNotBeEquivalentTo :: String -> String -> Expectation
+shouldNotBeEquivalentTo a b =
+    (parseStr a `isEquivalentTo` parseStr b) `shouldBe` False
+
 main :: IO ()
 main = hspec $ do
     describe "parseStr" $ do
@@ -30,6 +38,16 @@ main = hspec $ do
                     NamedVar [StaticKey (T.pack "c")]
                         (Fix (NConstant NNull))
                 ])
+
+    describe "isEquivalentTo" $ do
+        it "considers equivalent equal constants" $ do
+            "42" `shouldBeEquivalentTo` "42"
+        it "considers different different constants" $ do
+            "42" `shouldNotBeEquivalentTo` "43"
+        it "considers equivalent differently-quoted strings" $ do
+            "''a''" `shouldBeEquivalentTo` "\"a\""
+        it "considers different different strings" $ do
+            "\"a${\"b\"}c\"" `shouldNotBeEquivalentTo` "\"a${\"d\"}c\""
 
     describe "exprI" $ do
         it "indents constants" $ do

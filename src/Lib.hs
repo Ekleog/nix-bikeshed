@@ -1,5 +1,7 @@
 module Lib where
 
+import Control.Monad.Zip
+
 import Data.Fix
 import Data.List
 import qualified Data.Map as M
@@ -17,7 +19,7 @@ doTheThing file check = do
     let indented = indent expr;
     if check then do
         let check = parseStr indented;
-        if expr == check then
+        if expr `isEquivalentTo` check then
             putStrLn indented
         else
             error ("Unable to check the result: AST mismatch between\n" ++
@@ -37,6 +39,61 @@ parseStr :: String -> NExpr
 parseStr s = case parseNixString s of
     Success a -> a
     Failure e -> error $ show e
+
+isEquivalentTo :: NExpr -> NExpr -> Bool
+isEquivalentTo a b = case (a, b) of
+    (a, b) | a == b -> True
+    (Fix (NStr a), Fix (NStr b)) | a `stringEquiv` b -> True
+    (Fix (NList a), Fix (NList b)) | all (uncurry isEquivalentTo) (zip a b) -> True
+    (Fix (NSet a), Fix (NSet b)) | all (uncurry bindingEquiv) (zip a b) -> True
+    (Fix (NRecSet a), Fix (NRecSet b)) | all (uncurry bindingEquiv) (zip a b) -> True
+    (Fix (NUnary x a), Fix (NUnary y b)) | x == y && a `isEquivalentTo` b -> True
+    (Fix (NBinary x a b), Fix (NBinary y c d)) | x == y && a `isEquivalentTo` c
+                                              && b `isEquivalentTo` d -> True
+    (Fix (NSelect a b c), Fix (NSelect d e f)) | a `isEquivalentTo` d &&
+                                                 b `pathEquiv` e &&
+                                                 maybe (c == f) (uncurry isEquivalentTo) (mzip c f) -> True
+    (Fix (NHasAttr a b), Fix (NHasAttr c d)) | a `isEquivalentTo` c &&
+                                               b `pathEquiv` d -> True
+    (Fix (NAbs x a), Fix (NAbs y b)) | x == y && a `isEquivalentTo` b -> True
+    (Fix (NApp x a), Fix (NApp y b)) | x `isEquivalentTo` y &&
+                                       a `isEquivalentTo` b -> True
+    (Fix (NLet x a), Fix (NLet y b)) | all (uncurry bindingEquiv) (zip x y) &&
+                                       a `isEquivalentTo` b -> True
+    (Fix (NIf a b c), Fix (NIf d e f)) | a `isEquivalentTo` d &&
+                                         b `isEquivalentTo` e &&
+                                         c `isEquivalentTo` f -> True
+    (Fix (NWith a b), Fix (NWith c d)) | a `isEquivalentTo` c &&
+                                         b `isEquivalentTo` d -> True
+    (Fix (NAssert a b), Fix (NAssert c d)) | a `isEquivalentTo` c &&
+                                             b `isEquivalentTo` d -> True
+    _ -> False
+
+stringEquiv :: NString NExpr -> NString NExpr -> Bool
+stringEquiv a b = all (uncurry antiquotEquiv)
+                      (zip (stringContent a) (stringContent b))
+    where stringContent a = case a of
+            Indented x -> x
+            DoubleQuoted x -> x
+
+antiquotEquiv :: Antiquoted T.Text NExpr -> Antiquoted T.Text NExpr -> Bool
+antiquotEquiv a b = case (a, b) of
+    (a, b) | a == b -> True
+    (Antiquoted a, Antiquoted b) | a `isEquivalentTo` b -> True
+    _ -> False
+
+bindingEquiv :: Binding NExpr -> Binding NExpr -> Bool
+bindingEquiv a b = case (a, b) of
+    (a, b) | a == b -> True
+    (NamedVar a x, NamedVar b y) | a == b && x `isEquivalentTo` y -> True
+    _ -> False
+
+pathEquiv :: NAttrPath NExpr -> NAttrPath NExpr -> Bool
+pathEquiv a b = all (uncurry keyNameEquiv) (zip a b)
+
+keyNameEquiv :: NKeyName NExpr -> NKeyName NExpr -> Bool
+keyNameEquiv a b = case (a, b) of
+    (a, b) | a == b -> True
 
 indent :: NExpr -> String
 indent a = exprI a
