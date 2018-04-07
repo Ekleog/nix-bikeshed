@@ -104,7 +104,7 @@ exprI expr = case expr of
     Fix (NConstant c) -> atomI c
     Fix (NStr s) -> stringI s
     Fix (NSym s) -> T.unpack s
-    Fix (NList vals) -> "[" ++ intercalate " " (map exprI vals) ++ "]"
+    Fix (NList vals) -> listI vals
     Fix (NSet binds) -> setI False binds
     Fix (NRecSet binds) -> setI True binds
     Fix (NLiteralPath p) -> p
@@ -127,7 +127,7 @@ exprL expr = case expr of
     Fix (NConstant c) -> atomL c
     Fix (NStr s) -> stringL s
     Fix (NSym s) -> T.length s
-    Fix (NList vals) -> 1 + length vals + sum (map exprL vals)
+    Fix (NList vals) -> listL vals
     Fix (NSet binds) -> setL False binds
     Fix (NRecSet binds) -> setL True binds
     Fix (NLiteralPath p) -> length p
@@ -236,6 +236,12 @@ bindingL b = case b of
     Inherit set vars ->
         8 + length vars +
         maybe 0 (\s -> 3 + exprL s) set + sum (map keyNameL vars)
+
+listI :: [NExpr] -> String
+listI vals = "[" ++ intercalate " " (map exprI vals) ++ "]"
+
+listL :: [NExpr] -> Int
+listL vals = 1 + length vals + sum (map exprL vals)
 
 pathI :: NAttrPath NExpr -> String
 pathI p = intercalate "." $ map keyNameI p
