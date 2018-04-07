@@ -11,9 +11,9 @@ import Nix.Atoms
 import Nix.Expr
 import Nix.Parser
 
-doTheThing :: IO ()
-doTheThing = do
-    expr <- parseFile "test-input.nix"
+doTheThing :: String -> Bool -> IO ()
+doTheThing file check = do
+    expr <- parseFile file
     putStrLn $ indent expr
 
 parseFile :: FilePath -> IO NExpr
@@ -29,7 +29,7 @@ parseStr s = case parseNixString s of
     Failure e -> error $ show e
 
 indent :: NExpr -> String
-indent a = trace (show a) $ exprI a
+indent a = exprI a
 
 -- *I functions return the string that fits the constraints
 exprI :: NExpr -> String
