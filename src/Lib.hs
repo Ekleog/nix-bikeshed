@@ -409,12 +409,12 @@ paramSetL set = case set of
 appI :: NExpr -> NExpr -> String
 appI f x =
     parenIf (appPrio < exprPrio f) (exprI f) ++ " " ++
-    parenIf (appPrio < exprPrio x) (exprI x)
+    parenIf (appPrio <= exprPrio x) (exprI x)
 
 appL :: NExpr -> NExpr -> Int
 appL f x =
     (if appPrio < exprPrio f then 2 else 0) + exprL f + 1 +
-    (if appPrio < exprPrio x then 2 else 0) + exprL x
+    (if appPrio <= exprPrio x then 2 else 0) + exprL x
 
 setI :: Bool -> [Binding NExpr] -> String
 setI rec binds =
