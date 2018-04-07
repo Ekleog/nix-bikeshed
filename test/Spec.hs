@@ -79,6 +79,8 @@ main = hspec $ do
         it "indents out-of-line function applications" $ do
             "let foo = x: (x +1); in foo  3" `lineIndentsTo`
                 "let foo = x: x + 1; in foo 3"
+        it "does not forget parenthesis around parameters" $ do
+            "(x: x) (!true)" `lineIndentsTo` "(x: x) (!true)"
         it "indents let expressions" $ do
             "let a=1; in a" `lineIndentsTo` "let a = 1; in a"
         it "indents if-expressions" $ do
