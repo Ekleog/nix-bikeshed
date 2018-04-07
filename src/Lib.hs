@@ -14,7 +14,17 @@ import Nix.Parser
 doTheThing :: String -> Bool -> IO ()
 doTheThing file check = do
     expr <- parseFile file
-    putStrLn $ indent expr
+    let indented = indent expr;
+    if check then do
+        let check = parseStr indented;
+        if expr == check then
+            putStrLn indented
+        else
+            error ("Unable to check the result: AST mismatch between\n" ++
+                   "Source: " ++ show expr ++ "\n" ++
+                   "Indented: " ++ show check ++ "\n")
+    else
+        putStrLn indented
 
 parseFile :: FilePath -> IO NExpr
 parseFile f = do
