@@ -210,6 +210,9 @@ exprPrio expr = case expr of
 selectPrio :: Int
 selectPrio = 1
 
+listPrio :: Int
+listPrio = 2
+
 appPrio :: Int
 appPrio = 2
 
@@ -283,11 +286,14 @@ bindingL b = case b of
 listI :: [NExpr] -> NixMonad ()
 listI vals = do
     appendLine "["
-    intercalateM (appendLine " ") (map exprI vals)
+    intercalateM (appendLine " ")
+                 (map (\e -> parenIf (listPrio <= exprPrio e) $ exprI e) vals)
     appendLine "]"
 
 listL :: [NExpr] -> Int
-listL vals = 1 + length vals + sum (map exprL vals)
+listL vals =
+    1 + length vals +
+    sum (map (\e -> (if listPrio <= exprPrio e then 2 else 0) + exprL e) vals)
 
 pathI :: NAttrPath NExpr -> NixMonad ()
 pathI p = intercalateM (appendLine ".") $ map keyNameI p

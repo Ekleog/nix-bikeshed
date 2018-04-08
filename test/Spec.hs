@@ -67,6 +67,8 @@ main = hspec $ do
             "''foo\"bar''" `lineIndentsTo` "\"foo\\\"bar\""
         it "outputs lists" $ do
             "[1 2 3]" `lineIndentsTo` "[1 2 3]"
+        it "does not forget parenthesis  in lists" $ do
+            "[1 (1+1) 3]" `lineIndentsTo` "[1 (1 + 1) 3]"
         it "outputs sets" $ do
             "{a=3;c=5;}" `lineIndentsTo` "{ a = 3; c = 5; }"
             "{inherit foo;}" `lineIndentsTo` "{ inherit foo; }"
