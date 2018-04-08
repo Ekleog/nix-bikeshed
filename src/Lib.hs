@@ -15,10 +15,12 @@ import Nix.Atoms
 import Nix.Expr
 import Nix.Parser
 
+maxLineLength = 80
+
 doTheThing :: String -> Bool -> IO ()
 doTheThing file check = do
     expr <- parseFile file
-    let indented = indentExpr expr;
+    let indented = indentExpr maxLineLength expr;
     if check then do
         let check = parseStr indented;
         if expr `isEquivalentTo` check then
@@ -101,29 +103,30 @@ data WriteItem = WriteItem
     { isNewLine :: Bool
     , lineBegin :: String
     , text :: String }
-type Column = Int
-type NixMonad a = WriterT [WriteItem] (State Column) a
+type ColumnInfo = (Int, Int) -- (current column, maximal column)
+type NixMonad a = WriterT [WriteItem] (State ColumnInfo) a
 
 appendLine :: String -> NixMonad ()
 appendLine x = do
     tell [WriteItem { isNewLine = False, lineBegin = "", text = x }]
-    curCol <- get
-    put $ curCol + length x
+    (col, max) <- get
+    put $ (col + length x, max)
 
-newLine :: String -> NixMonad ()
-newLine x = do
-    tell [WriteItem { isNewLine = True, lineBegin = "", text = x }]
-    put $ length x
+newLine :: NixMonad ()
+newLine = do
+    tell [WriteItem { isNewLine = True, lineBegin = "", text = "" }]
+    (_, max) <- get
+    put $ (0, max)
 
 noop :: NixMonad ()
 noop = tell []
 
 indent :: NixMonad () -> NixMonad ()
 indent x = do
-    curCol <- get
-    put $ curCol + 2
+    (col, max) <- get
+    put $ (col + 2, max)
     flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
-    put $ curCol
+    put $ (col, max)
 
 concatMapM :: (a -> NixMonad()) -> [a] -> NixMonad ()
 concatMapM f l = case l of
@@ -136,9 +139,9 @@ concatM = concatMapM id
 intercalateM :: NixMonad () -> [NixMonad ()] -> NixMonad ()
 intercalateM v l = concatM $ intersperse v l
 
-indentExpr :: NExpr -> String
-indentExpr a =
-    let nix = evalState (execWriterT (exprI a)) 0 in
+indentExpr :: Int -> NExpr -> String
+indentExpr maximalLineLength a =
+    let nix = evalState (execWriterT (exprI a)) (0, maximalLineLength) in
     concatMap (\wi ->
         (if isNewLine wi then "\n" ++ lineBegin wi else "") ++ text wi
     ) nix
@@ -494,12 +497,18 @@ appL f x =
 
 setI :: Bool -> [Binding NExpr] -> NixMonad ()
 setI rec binds = do
-    (if rec then appendLine "rec " else noop)
-    (if binds == [] then appendLine "{}"
-     else do
-        appendLine "{ "
-        intercalateM (appendLine " ") (map bindingI binds)
-        appendLine " }")
+    when rec $ appendLine "rec "
+    if binds == [] then appendLine "{}"
+    else do
+        (col, max) <- get
+        if col + setL False binds < max then do
+            appendLine "{ "
+            intercalateM (appendLine " ") $ map bindingI binds
+            appendLine " }"
+        else do
+            appendLine "{"
+            indent $ newLine >> intercalateM newLine (map bindingI binds)
+            newLine >> appendLine "}"
 
 setL :: Bool -> [Binding NExpr] -> Int
 setL rec binds =

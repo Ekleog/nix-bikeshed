@@ -10,8 +10,12 @@ import Test.Hspec
 
 lineIndentsTo :: String -> String -> Expectation
 lineIndentsTo a b = do
-    indentExpr (parseStr a) `shouldBe` b
+    indentExpr 1000000000 (parseStr a) `shouldBe` b
     exprL (parseStr a) `shouldBe` length b
+
+shortIndentsTo :: String -> String -> Expectation
+shortIndentsTo a b = do
+    indentExpr 0 (parseStr a) `shouldBe` b
 
 shouldBeEquivalentTo :: String -> String -> Expectation
 shouldBeEquivalentTo a b =
@@ -50,68 +54,74 @@ main = hspec $ do
             "\"a${\"b\"}c\"" `shouldNotBeEquivalentTo` "\"a${\"d\"}c\""
 
     describe "indentExpr" $ do
-        it "indents constants" $ do
+        it "outputs constants" $ do
             "42" `lineIndentsTo` "42"
             "true" `lineIndentsTo` "true"
             "false" `lineIndentsTo` "false"
             "null" `lineIndentsTo` "null"
             "https://example.org" `lineIndentsTo` "https://example.org"
-        it "indents strings" $ do
+        it "outputs strings" $ do
             "\"foo bar\"" `lineIndentsTo` "\"foo bar\""
             "''foo bar''" `lineIndentsTo` "\"foo bar\""
             "''foo\"bar''" `lineIndentsTo` "\"foo\\\"bar\""
             "''foo\"bar''" `lineIndentsTo` "\"foo\\\"bar\""
-        it "indents lists" $ do
+        it "outputs lists" $ do
             "[1 2 3]" `lineIndentsTo` "[1 2 3]"
-        it "indents sets" $ do
+        it "outputs sets" $ do
             "{a=3;c=5;}" `lineIndentsTo` "{ a = 3; c = 5; }"
             "{inherit foo;}" `lineIndentsTo` "{ inherit foo; }"
             "{inherit (x) a b c;}" `lineIndentsTo` "{ inherit (x) a b c; }"
             "{${a}=3;}" `lineIndentsTo` "{ ${a} = 3; }"
             "{\"${a}\"=3;}" `lineIndentsTo` "{ \"${a}\" = 3; }"
             "{\"a${a}b\"=3;}" `lineIndentsTo` "{ \"a${a}b\" = 3; }"
-        it "indents symbols" $ do
+        it "outputs symbols" $ do
             "a-b" `lineIndentsTo` "a-b"
             "{a=b;b=a;}" `lineIndentsTo` "{ a = b; b = a; }"
-        it "indents recursive sets" $ do
+        it "outputs recursive sets" $ do
             "rec{a=b;b=a;}" `lineIndentsTo` "rec { a = b; b = a; }"
-        it "indents literal paths" $ do
+        it "outputs literal paths" $ do
             "./foo.bar" `lineIndentsTo` "./foo.bar"
-        it "indents environment paths" $ do
+        it "outputs environment paths" $ do
             "<nixpkgs/nixos>" `lineIndentsTo` "<nixpkgs/nixos>"
-        it "indents operator-based expressions" $ do
+        it "outputs operator-based expressions" $ do
             "-(1+2+3-5*6 == 7 && 8 > 9)" `lineIndentsTo`
                 "-(1 + 2 + 3 - 5 * 6 == 7 && 8 > 9)"
             "-3" `lineIndentsTo` "-3"
             "1+2+(3+4)" `lineIndentsTo` "1 + 2 + 3 + 4"
             "1+2-(3+4)" `lineIndentsTo` "1 + 2 - (3 + 4)"
-        it "indents select expressions" $ do
+        it "outputs select expressions" $ do
             "({}.a or {b=1;}).b" `lineIndentsTo` "({}.a or { b = 1; }).b"
             "{a=2;}.a or (3+3)" `lineIndentsTo` "{ a = 2; }.a or (3 + 3)"
-        it "indents ?-expressions" $ do
+        it "outputs ?-expressions" $ do
             "{a=1;}?a && {} ? b" `lineIndentsTo` "{ a = 1; } ? a && {} ? b"
-        it "indents lambdas" $ do
+        it "outputs lambdas" $ do
             "foo: bar: foo+bar" `lineIndentsTo` "foo: bar: foo + bar"
-        it "indents inline function applications" $ do
+        it "outputs inline function applications" $ do
             "(foo: foo) 3" `lineIndentsTo` "(foo: foo) 3"
-        it "indents out-of-line function applications" $ do
+        it "outputs out-of-line function applications" $ do
             "let foo = x: (x +1); in foo  3" `lineIndentsTo`
                 "let foo = x: x + 1; in foo 3"
         it "considers function application left-associative" $ do
             "a (b 2)" `lineIndentsTo` "a (b 2)"
         it "does not forget parenthesis around parameters" $ do
             "(x: x) (!true)" `lineIndentsTo` "(x: x) (!true)"
-        it "indents let expressions" $ do
+        it "outputs let expressions" $ do
             "let a=1; in a" `lineIndentsTo` "let a = 1; in a"
-        it "indents if-expressions" $ do
+        it "outputs if-expressions" $ do
             "if  a==b then 0 else 1" `lineIndentsTo` "if a == b then 0 else 1"
-        it "indents with-blocks" $ do
+        it "outputs with-blocks" $ do
             "with {}; 12" `lineIndentsTo` "with {}; 12"
-        it "indents assertions" $ do
+        it "outputs assertions" $ do
             "assert 1==2; null" `lineIndentsTo` "assert 1 == 2; null"
-        it "indents parameter sets" $ do
+        it "outputs parameter sets" $ do
             "{foo, bar?0, baz?{x=1;}}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo }: baz"
-        it "indents variadic parameter sets" $ do
+        it "outputs variadic parameter sets" $ do
             "{foo, bar?0, baz?{x=1;},...}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo, ... }: baz"
+
+        it "indents sets" $ do
+            "{foo=bar;baz=quux;}" `shortIndentsTo` "{\n\
+            \  foo = bar;\n\
+            \  baz = quux;\n\
+            \}"
