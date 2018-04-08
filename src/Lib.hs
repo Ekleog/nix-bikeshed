@@ -128,16 +128,8 @@ indent x = do
     flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
     put $ (col, max)
 
-concatMapM :: (a -> NixMonad()) -> [a] -> NixMonad ()
-concatMapM f l = case l of
-    [] -> noop
-    h : t -> f h >> concatMapM f t
-
-concatM :: [NixMonad ()] -> NixMonad ()
-concatM = concatMapM id
-
 intercalateM :: NixMonad () -> [NixMonad ()] -> NixMonad ()
-intercalateM v l = concatM $ intersperse v l
+intercalateM v l = mapM_ id $ intersperse v l
 
 indentExpr :: Int -> NExpr -> String
 indentExpr maximalLineLength a =
@@ -339,7 +331,7 @@ stringI s = case s of
     DoubleQuoted t -> stringI (Indented t) -- ignore string type
     Indented t -> do
         appendLine "\""
-        concatMapM escapeAntiquotedI t
+        mapM_ escapeAntiquotedI t
         appendLine "\""
 
 stringL :: NString NExpr -> Int
