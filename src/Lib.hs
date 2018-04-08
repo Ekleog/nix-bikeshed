@@ -259,6 +259,8 @@ associates l r = case (l, r) of
     (NEq, NNEq) -> False
     (NNEq, NEq) -> False
     (NNEq, NNEq) -> False
+    -- //
+    (NUpdate, NUpdate) -> True
 
 paren :: NixMonad () -> NixMonad ()
 paren s = appendLine "(" >> s >> appendLine ")"

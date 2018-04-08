@@ -91,6 +91,8 @@ main = hspec $ do
             "-3" `lineIndentsTo` "-3"
             "1+2+(3+4)" `lineIndentsTo` "1 + 2 + 3 + 4"
             "1+2-(3+4)" `lineIndentsTo` "1 + 2 - (3 + 4)"
+        it "doesn't forget chaining update operators" $ do
+            "a//b//c" `lineIndentsTo` "a // b // c"
         it "outputs select expressions" $ do
             "({}.a or {b=1;}).b" `lineIndentsTo` "({}.a or { b = 1; }).b"
             "{a=2;}.a or (3+3)" `lineIndentsTo` "{ a = 2; }.a or (3 + 3)"
