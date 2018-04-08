@@ -1,5 +1,7 @@
 module Lib where
 
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
 import Control.Monad.Zip
 
 import Data.Fix
@@ -16,7 +18,7 @@ import Nix.Parser
 doTheThing :: String -> Bool -> IO ()
 doTheThing file check = do
     expr <- parseFile file
-    let indented = indent expr;
+    let indented = indentExpr expr;
     if check then do
         let check = parseStr indented;
         if expr `isEquivalentTo` check then
@@ -95,20 +97,63 @@ keyNameEquiv :: NKeyName NExpr -> NKeyName NExpr -> Bool
 keyNameEquiv a b = case (a, b) of
     (a, b) | a == b -> True
 
-indent :: NExpr -> String
-indent a = exprI a
+data WriteItem = WriteItem
+    { isNewLine :: Bool
+    , lineBegin :: String
+    , text :: String }
+type Column = Int
+type NixMonad a = WriterT [WriteItem] (State Column) a
+
+appendLine :: String -> NixMonad ()
+appendLine x = do
+    tell [WriteItem { isNewLine = False, lineBegin = "", text = x }]
+    curCol <- get
+    put $ curCol + length x
+
+newLine :: String -> NixMonad ()
+newLine x = do
+    tell [WriteItem { isNewLine = True, lineBegin = "", text = x }]
+    put $ length x
+
+noop :: NixMonad ()
+noop = tell []
+
+indent :: NixMonad () -> NixMonad ()
+indent x = do
+    curCol <- get
+    put $ curCol + 2
+    flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
+    put $ curCol
+
+concatMapM :: (a -> NixMonad()) -> [a] -> NixMonad ()
+concatMapM f l = case l of
+    [] -> noop
+    h : t -> f h >> concatMapM f t
+
+concatM :: [NixMonad ()] -> NixMonad ()
+concatM = concatMapM id
+
+intercalateM :: NixMonad () -> [NixMonad ()] -> NixMonad ()
+intercalateM v l = concatM $ intersperse v l
+
+indentExpr :: NExpr -> String
+indentExpr a =
+    let nix = evalState (execWriterT (exprI a)) 0 in
+    concatMap (\wi ->
+        (if isNewLine wi then "\n" ++ lineBegin wi else "") ++ text wi
+    ) nix
 
 -- *I functions return the string that fits the constraints
-exprI :: NExpr -> String
+exprI :: NExpr -> NixMonad ()
 exprI expr = case expr of
     Fix (NConstant c) -> atomI c
     Fix (NStr s) -> stringI s
-    Fix (NSym s) -> T.unpack s
+    Fix (NSym s) -> appendLine $ T.unpack s
     Fix (NList vals) -> listI vals
     Fix (NSet binds) -> setI False binds
     Fix (NRecSet binds) -> setI True binds
-    Fix (NLiteralPath p) -> p
-    Fix (NEnvPath p) -> "<" ++ p ++ ">"
+    Fix (NLiteralPath p) -> appendLine p
+    Fix (NEnvPath p) -> appendLine $ "<" ++ p ++ ">"
     Fix (NUnary op ex) -> unaryOpI op ex
     Fix (NBinary op l r) -> binaryOpI op l r
     Fix (NSelect set attr def) -> selectI set attr def
@@ -217,18 +262,21 @@ associates l r = case (l, r) of
     (NNEq, NEq) -> False
     (NNEq, NNEq) -> False
 
-paren :: String -> String
-paren s = "(" ++ s ++ ")"
+paren :: NixMonad () -> NixMonad ()
+paren s = appendLine "(" >> s >> appendLine ")"
 
-parenIf :: Bool -> String -> String
+parenIf :: Bool -> NixMonad () -> NixMonad ()
 parenIf cond = if cond then paren else id
 
-bindingI :: Binding NExpr -> String
+bindingI :: Binding NExpr -> NixMonad ()
 bindingI b = case b of
-    NamedVar path val -> pathI path ++ " = " ++ exprI val ++ ";"
-    Inherit set vars ->
-        "inherit " ++ maybe "" (\s -> "(" ++ exprI s ++ ") ") set ++
-            intercalate " " (map keyNameI vars) ++ ";"
+    NamedVar path val -> do
+        pathI path >> appendLine " = " >> exprI val >> appendLine ";"
+    Inherit set vars -> do
+        appendLine "inherit "
+        maybe noop (\s -> appendLine "(" >> exprI s >> appendLine ") ") set
+        intercalateM (appendLine " ") (map keyNameI vars)
+        appendLine ";"
 
 bindingL :: Binding NExpr -> Int
 bindingL b = case b of
@@ -237,23 +285,29 @@ bindingL b = case b of
         8 + length vars +
         maybe 0 (\s -> 3 + exprL s) set + sum (map keyNameL vars)
 
-listI :: [NExpr] -> String
-listI vals = "[" ++ intercalate " " (map exprI vals) ++ "]"
+listI :: [NExpr] -> NixMonad ()
+listI vals = do
+    appendLine "["
+    intercalateM (appendLine " ") (map exprI vals)
+    appendLine "]"
 
 listL :: [NExpr] -> Int
 listL vals = 1 + length vals + sum (map exprL vals)
 
-pathI :: NAttrPath NExpr -> String
-pathI p = intercalate "." $ map keyNameI p
+pathI :: NAttrPath NExpr -> NixMonad ()
+pathI p = intercalateM (appendLine ".") $ map keyNameI p
 
 pathL :: NAttrPath NExpr -> Int
 pathL p = length p - 1 + sum (map keyNameL p)
 
-keyNameI :: NKeyName NExpr -> String
+keyNameI :: NKeyName NExpr -> NixMonad ()
 keyNameI kn = case kn of
-    StaticKey k -> T.unpack k
+    StaticKey k -> appendLine $ T.unpack k
     DynamicKey (Plain s) -> stringI s
-    DynamicKey (Antiquoted e) -> "${" ++ exprI e ++ "}"
+    DynamicKey (Antiquoted e) -> do
+        appendLine "${"
+        exprI e
+        appendLine "}"
 
 keyNameL :: NKeyName NExpr -> Int
 keyNameL kn = case kn of
@@ -261,13 +315,13 @@ keyNameL kn = case kn of
     DynamicKey (Plain s) -> stringL s
     DynamicKey (Antiquoted e) -> 3 + exprL e
 
-atomI :: NAtom -> String
+atomI :: NAtom -> NixMonad ()
 atomI a = case a of
-    NInt i -> show i
-    NBool True -> "true"
-    NBool False -> "false"
-    NNull -> "null"
-    NUri t -> T.unpack t
+    NInt i -> appendLine $ show i
+    NBool True -> appendLine $ "true"
+    NBool False -> appendLine $ "false"
+    NNull -> appendLine $ "null"
+    NUri t -> appendLine $ T.unpack t
 
 atomL :: NAtom -> Int
 atomL a = case a of
@@ -277,20 +331,26 @@ atomL a = case a of
     NNull -> 4
     NUri t -> T.length t
 
-stringI :: NString NExpr -> String
+stringI :: NString NExpr -> NixMonad ()
 stringI s = case s of
     DoubleQuoted t -> stringI (Indented t) -- ignore string type
-    Indented t -> "\"" ++ concatMap escapeAntiquotedI t ++ "\""
+    Indented t -> do
+        appendLine "\""
+        concatMapM escapeAntiquotedI t
+        appendLine "\""
 
 stringL :: NString NExpr -> Int
 stringL s = case s of
     DoubleQuoted t -> stringL (Indented t) -- ignore string type
     Indented t -> 2 + sum (map escapeAntiquotedL t)
 
-escapeAntiquotedI :: Antiquoted T.Text NExpr -> String
+escapeAntiquotedI :: Antiquoted T.Text NExpr -> NixMonad ()
 escapeAntiquotedI a = case a of
-    Plain t -> tail $ init $ show $ T.unpack t
-    Antiquoted e -> "${" ++ exprI e ++ "}"
+    Plain t -> appendLine $ tail $ init $ show $ T.unpack t
+    Antiquoted e -> do
+        appendLine "${"
+        exprI e
+        appendLine "}"
 
 escapeAntiquotedL :: Antiquoted T.Text NExpr -> Int
 escapeAntiquotedL a = case a of
@@ -302,9 +362,10 @@ unOpStr op = case op of
     NNeg -> "-"
     NNot -> "!"
 
-unaryOpI :: NUnaryOp -> NExpr -> String
-unaryOpI op ex =
-    unOpStr op ++ parenIf (unaryPrio op < exprPrio ex) (exprI ex)
+unaryOpI :: NUnaryOp -> NExpr -> NixMonad ()
+unaryOpI op ex = do
+    appendLine $ unOpStr op
+    parenIf (unaryPrio op < exprPrio ex) (exprI ex)
 
 unaryOpL :: NUnaryOp -> NExpr -> Int
 unaryOpL op ex =
@@ -339,10 +400,10 @@ binaryOpNeedsParen isLeftChild par child =
         not ((if isLeftChild then id else flip) associates (binOpOf child) par)
     )
 
-binaryOpI :: NBinaryOp -> NExpr -> NExpr -> String
-binaryOpI op l r =
-    parenIf (binaryOpNeedsParen True op l) (exprI l) ++ " " ++
-    binOpStr op ++ " " ++
+binaryOpI :: NBinaryOp -> NExpr -> NExpr -> NixMonad ()
+binaryOpI op l r = do
+    parenIf (binaryOpNeedsParen True op l) (exprI l)
+    appendLine $ " " ++ binOpStr op ++ " "
     parenIf (binaryOpNeedsParen False op r) (exprI r)
 
 binaryOpL :: NBinaryOp -> NExpr -> NExpr -> Int
@@ -351,12 +412,15 @@ binaryOpL op l r =
     (if binaryOpNeedsParen True op l then 2 else 0) +
     (if binaryOpNeedsParen False op r then 2 else 0)
 
-selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> String
-selectI set attr def =
-    parenIf (selectPrio <= exprPrio set) (exprI set) ++
-    "." ++ pathI attr ++
-    maybe ""
-          (\x -> " or " ++ parenIf (selectPrio <= exprPrio x) (exprI x))
+selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> NixMonad ()
+selectI set attr def = do
+    parenIf (selectPrio <= exprPrio set) (exprI set)
+    appendLine "."
+    pathI attr
+    maybe noop
+          (\x -> do
+            appendLine " or "
+            parenIf (selectPrio <= exprPrio x) (exprI x))
           def
 
 selectL :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> Int
@@ -366,39 +430,44 @@ selectL set attr def =
           (\x -> 4 + (if (selectPrio <= exprPrio x) then 2 else 0) + exprL x)
           def
 
-hasAttrI :: NExpr -> NAttrPath NExpr -> String
-hasAttrI set attr =
-    parenIf (hasAttrPrio <= exprPrio set) (exprI set) ++
-    " ? " ++ pathI attr
+hasAttrI :: NExpr -> NAttrPath NExpr -> NixMonad ()
+hasAttrI set attr = do
+    parenIf (hasAttrPrio <= exprPrio set) (exprI set)
+    appendLine " ? "
+    pathI attr
 
 hasAttrL :: NExpr -> NAttrPath NExpr -> Int
 hasAttrL set attr =
     3 + (if hasAttrPrio < exprPrio set then 2 else 0) + exprL set + pathL attr
 
-absI :: Params NExpr -> NExpr -> String
-absI par ex = paramI par ++ ": " ++ exprI ex
+absI :: Params NExpr -> NExpr -> NixMonad ()
+absI par ex = do
+    paramI par
+    appendLine ": "
+    exprI ex
 
 absL :: Params NExpr -> NExpr -> Int
 absL par ex = paramL par + 2 + exprL ex
 
-paramI :: Params NExpr -> String
+paramI :: Params NExpr -> NixMonad ()
 paramI par = case par of
-    Param p -> T.unpack p
-    ParamSet set name -> paramSetI set ++ maybe "" T.unpack name
+    Param p -> appendLine $ T.unpack p
+    ParamSet set name -> paramSetI set >> maybe noop (appendLine . T.unpack) name
 
 paramL :: Params NExpr -> Int
 paramL par = case par of
     Param p -> T.length p
     ParamSet set name -> paramSetL set + maybe 0 (\n -> 3 + T.length n) name
 
-paramSetI :: ParamSet NExpr -> String
+paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = case set of
-        FixedParamSet m -> "{ " ++ impl m ++ " }"
-        VariadicParamSet m -> "{ " ++ impl m ++ ", ... }"
+        FixedParamSet m -> appendLine "{ " >> impl m >>appendLine " }"
+        VariadicParamSet m -> appendLine "{ " >> impl m >> appendLine ", ... }"
     where
         impl set =
-            intercalate ", " (map (\(k, x) ->
-                T.unpack k ++ maybe "" (\e -> " ? " ++ exprI e) x
+            intercalateM (appendLine ", ") (map (\(k, x) -> do
+                appendLine $ T.unpack k
+                maybe noop (\e -> appendLine " ? " >> exprI e) x
             ) (M.toList set))
 
 paramSetL :: ParamSet NExpr -> Int
@@ -412,9 +481,10 @@ paramSetL set = case set of
                 \(k, x) -> T.length k + maybe 0 (\e -> 3 + exprL e) x
             ) l)
 
-appI :: NExpr -> NExpr -> String
-appI f x =
-    parenIf (appPrio < exprPrio f) (exprI f) ++ " " ++
+appI :: NExpr -> NExpr -> NixMonad ()
+appI f x = do
+    parenIf (appPrio < exprPrio f) (exprI f)
+    appendLine " "
     parenIf (appPrio <= exprPrio x) (exprI x)
 
 appL :: NExpr -> NExpr -> Int
@@ -422,35 +492,48 @@ appL f x =
     (if appPrio < exprPrio f then 2 else 0) + exprL f + 1 +
     (if appPrio <= exprPrio x then 2 else 0) + exprL x
 
-setI :: Bool -> [Binding NExpr] -> String
-setI rec binds =
-    (if rec then "rec " else "") ++
-    (if binds == [] then "{}"
-     else "{ " ++ intercalate " " (map bindingI binds) ++ " }")
+setI :: Bool -> [Binding NExpr] -> NixMonad ()
+setI rec binds = do
+    (if rec then appendLine "rec " else noop)
+    (if binds == [] then appendLine "{}"
+     else do
+        appendLine "{ "
+        intercalateM (appendLine " ") (map bindingI binds)
+        appendLine " }")
 
 setL :: Bool -> [Binding NExpr] -> Int
 setL rec binds =
     (if rec then 4 else 0) +
     (if binds == [] then 2 else 3 + length binds + sum (map bindingL binds))
 
-letI :: [Binding NExpr] -> NExpr -> String
-letI binds ex =
-    "let " ++ intercalate " " (map bindingI binds) ++ " in " ++
+letI :: [Binding NExpr] -> NExpr -> NixMonad ()
+letI binds ex = do
+    appendLine "let "
+    intercalateM (appendLine " ") (map bindingI binds)
+    appendLine " in "
     exprI ex
 
 letL :: [Binding NExpr] -> NExpr -> Int
 letL binds ex = 7 + length binds + exprL ex + sum (map bindingL binds)
 
-ifI :: NExpr -> NExpr -> NExpr -> String
-ifI cond then_ else_ =
-    "if " ++ exprI cond ++ " then " ++ exprI then_ ++
-    " else " ++ exprI else_;
+ifI :: NExpr -> NExpr -> NExpr -> NixMonad ()
+ifI cond then_ else_ = do
+    appendLine "if "
+    exprI cond
+    appendLine " then "
+    exprI then_
+    appendLine " else "
+    exprI else_;
 
 ifL :: NExpr -> NExpr -> NExpr -> Int
 ifL c t e = 15 + exprL c + exprL t + exprL e
 
-stmtI :: String -> NExpr -> NExpr -> String
-stmtI kw it expr = kw ++ " " ++ exprI it ++ "; " ++ exprI expr
+stmtI :: String -> NExpr -> NExpr -> NixMonad ()
+stmtI kw it expr = do
+    appendLine $ kw ++ " "
+    exprI it
+    appendLine "; "
+    exprI expr
 
 stmtL :: Int -> NExpr -> NExpr -> Int
 stmtL kwlen it expr = kwlen + 3 + exprL it + exprL expr

@@ -10,7 +10,7 @@ import Test.Hspec
 
 lineIndentsTo :: String -> String -> Expectation
 lineIndentsTo a b = do
-    exprI (parseStr a) `shouldBe` b
+    indentExpr (parseStr a) `shouldBe` b
     exprL (parseStr a) `shouldBe` length b
 
 shouldBeEquivalentTo :: String -> String -> Expectation
@@ -49,7 +49,7 @@ main = hspec $ do
         it "considers different different strings" $ do
             "\"a${\"b\"}c\"" `shouldNotBeEquivalentTo` "\"a${\"d\"}c\""
 
-    describe "exprI" $ do
+    describe "indentExpr" $ do
         it "indents constants" $ do
             "42" `lineIndentsTo` "42"
             "true" `lineIndentsTo` "true"
