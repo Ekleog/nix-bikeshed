@@ -154,3 +154,6 @@ main = hspec $ do
             \  a\n\
             \  ${b}\n\
             \  c''"
+            "\"a\n\"" `shortIndentsTo` "''\n\
+            \  a\n\
+            \''"

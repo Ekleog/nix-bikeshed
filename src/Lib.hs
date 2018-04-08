@@ -121,12 +121,13 @@ newLine = do
 noop :: NixMonad ()
 noop = tell []
 
-indent :: NixMonad () -> NixMonad ()
+indent :: NixMonad a -> NixMonad a
 indent x = do
     (col, max) <- get
     put $ (col + 2, max)
-    flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
+    res <- flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
     put $ (col, max)
+    return res
 
 intercalateM :: NixMonad () -> [NixMonad ()] -> NixMonad ()
 intercalateM v l = sequence_ $ intersperse v l
@@ -345,12 +346,17 @@ stringI s = case s of
             appendLine "\""
         else do
             appendLine "''"
-            indent $ do
+            lastEndedWithNewLine <- indent $ do
                 newLine
-                flip mapM_ t $ \item -> do
-                    let (endsWithNewLine, output) = escapeMultilineI item;
-                    output
-                    when endsWithNewLine newLine
+                foldM
+                    (\lastEndedWithNewLine -> \item -> do
+                        let (endsWithNewLine, output) = escapeMultilineI item;
+                        when lastEndedWithNewLine newLine
+                        output
+                        return endsWithNewLine)
+                    False
+                    t
+            when lastEndedWithNewLine newLine
             appendLine "''"
 
 stringL :: NString NExpr -> Int
