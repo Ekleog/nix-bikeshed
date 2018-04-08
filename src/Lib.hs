@@ -535,10 +535,17 @@ setL rec binds =
 
 letI :: [Binding NExpr] -> NExpr -> NixMonad ()
 letI binds ex = do
-    appendLine "let "
-    intercalateM (appendLine " ") (map bindingI binds)
-    appendLine " in "
-    exprI ex
+    (col, max) <- get
+    if col + letL binds ex <= max then do
+        appendLine "let "
+        intercalateM (appendLine " ") (map bindingI binds)
+        appendLine " in "
+        exprI ex
+    else do
+        appendLine "let"
+        indent $ newLine >> intercalateM newLine (map bindingI binds)
+        newLine >> appendLine "in" >> newLine
+        exprI ex
 
 letL :: [Binding NExpr] -> NExpr -> Int
 letL binds ex = 7 + length binds + exprL ex + sum (map bindingL binds)

@@ -138,3 +138,8 @@ main = hspec $ do
             \  ...\n\
             \}:\n\
             \b"
+        it "indents let blocks" $ do
+            "let a=b; in c" `shortIndentsTo` "let\n\
+            \  a = b;\n\
+            \in\n\
+            \c"
