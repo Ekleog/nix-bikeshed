@@ -149,3 +149,8 @@ main = hspec $ do
             \  a = b;\n\
             \in\n\
             \c"
+        it "indents strings" $ do
+            "\"a\n${b}\nc\"" `shortIndentsTo` "''\n\
+            \  a\n\
+            \  ${b}\n\
+            \  c''"

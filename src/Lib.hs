@@ -338,9 +338,20 @@ stringI :: NString NExpr -> NixMonad ()
 stringI s = case s of
     DoubleQuoted t -> stringI (Indented t) -- ignore string type
     Indented t -> do
-        appendLine "\""
-        mapM_ escapeAntiquotedI t
-        appendLine "\""
+        (col, max) <- get
+        if col + stringL (Indented t) <= max then do
+            appendLine "\""
+            mapM_ escapeAntiquotedI t
+            appendLine "\""
+        else do
+            appendLine "''"
+            indent $ do
+                newLine
+                flip mapM_ t $ \item -> do
+                    let (endsWithNewLine, output) = escapeMultilineI item;
+                    output
+                    when endsWithNewLine newLine
+            appendLine "''"
 
 stringL :: NString NExpr -> Int
 stringL s = case s of
@@ -354,6 +365,13 @@ escapeAntiquotedI a = case a of
         appendLine "${"
         exprI e
         appendLine "}"
+
+-- returns (endsWithNewLine, output)
+escapeMultilineI :: Antiquoted T.Text NExpr -> (Bool, NixMonad ())
+escapeMultilineI a = case a of
+    Plain t -> (last (T.unpack t) == '\n',
+                intercalateM newLine $ map appendLine $ lines $ T.unpack t)
+    Antiquoted e -> (False, appendLine "${" >> exprI e >> appendLine "}")
 
 escapeAntiquotedL :: Antiquoted T.Text NExpr -> Int
 escapeAntiquotedL a = case a of
