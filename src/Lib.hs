@@ -129,7 +129,7 @@ indent x = do
     put $ (col, max)
 
 intercalateM :: NixMonad () -> [NixMonad ()] -> NixMonad ()
-intercalateM v l = mapM_ id $ intersperse v l
+intercalateM v l = sequence_ $ intersperse v l
 
 indentExpr :: Int -> NExpr -> String
 indentExpr maximalLineLength a =
