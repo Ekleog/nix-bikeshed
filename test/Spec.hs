@@ -127,3 +127,14 @@ main = hspec $ do
             \}"
         it "indents function definitions" $ do
             "a: b" `shortIndentsTo` "a:\nb"
+        it "indents parameter sets" $ do
+            "{a?b,c}:d" `shortIndentsTo` "{\n\
+            \  a ? b,\n\
+            \  c\n\
+            \}:\n\
+            \d"
+            "{a,...}:b" `shortIndentsTo` "{\n\
+            \  a,\n\
+            \  ...\n\
+            \}:\n\
+            \b"

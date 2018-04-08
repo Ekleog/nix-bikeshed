@@ -459,20 +459,38 @@ paramL par = case par of
 paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = case set of
         FixedParamSet m -> do
-            appendLine "{ "
-            paramSetContentsI (M.toList m)
-            appendLine " }"
+            (col, max) <- get
+            if col + paramSetL set <= max then do
+                appendLine "{ "
+                paramSetContentsI False (M.toList m)
+                appendLine " }"
+            else do
+                appendLine "{"
+                indent $ newLine >> paramSetContentsI True (M.toList m)
+                newLine >> appendLine "}"
         VariadicParamSet m -> do
-            appendLine "{ "
-            paramSetContentsI (M.toList m)
-            appendLine ", ... }"
+            (col, max) <- get
+            if col + paramSetL set <= max then do
+                appendLine "{ "
+                paramSetContentsI False (M.toList m)
+                appendLine ", ... }"
+            else do
+                appendLine "{"
+                indent $ do
+                    newLine
+                    paramSetContentsI True (M.toList m) >> appendLine ","
+                    newLine >> appendLine "..."
+                newLine >> appendLine "}"
 
-paramSetContentsI :: [(T.Text, Maybe NExpr)] -> NixMonad ()
-paramSetContentsI set =
-    intercalateM (appendLine ", ") (map (\(k, x) -> do
-        appendLine $ T.unpack k
-        maybe noop (\e -> appendLine " ? " >> exprI e) x
-    ) set)
+paramSetContentsI :: Bool -> [(T.Text, Maybe NExpr)] -> NixMonad ()
+paramSetContentsI intersperseLines set =
+    intercalateM
+        (if intersperseLines then appendLine "," >> newLine
+         else appendLine ", ")
+        (map (\(k, x) -> do
+            appendLine $ T.unpack k
+            maybe noop (\e -> appendLine " ? " >> exprI e) x
+         ) set)
 
 paramSetL :: ParamSet NExpr -> Int
 paramSetL set = case set of
