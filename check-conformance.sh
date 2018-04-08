@@ -12,9 +12,10 @@ fi
 
 dir="$1"
 
-echo "Checking the built nix-bikeshed (hope you didn't forget to run"
-echo "‘stack --nix build’ before) against all files in ‘$dir’"
+echo "Building nix-bikeshed…"
+stack --nix build
 
+echo "Checking the built nix-bikeshed against all files in ‘$dir’"
 find "$1" -type f -name '*.nix' | while read file; do
     if ! stack --nix exec -- nix-bikeshed --check "$file" > /dev/null; then
         echo "Failed to check ‘$file’"
