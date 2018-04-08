@@ -14,8 +14,10 @@ lineIndentsTo a b = do
     exprL (parseStr a) `shouldBe` length b
 
 shortIndentsTo :: String -> String -> Expectation
-shortIndentsTo a b = do
-    indentExpr 0 (parseStr a) `shouldBe` b
+shortIndentsTo a b = indentExpr 0 (parseStr a) `shouldBe` b
+
+indentsTo :: Int -> String -> String -> Expectation
+indentsTo l a b = indentExpr l (parseStr a) `shouldBe` b
 
 shouldBeEquivalentTo :: String -> String -> Expectation
 shouldBeEquivalentTo a b =
@@ -132,18 +134,16 @@ main = hspec $ do
             \  baz = quux;\n\
             \}"
         it "indents function definitions" $ do
-            "a: b" `shortIndentsTo` "a:\nb"
+            "a: b" `shortIndentsTo` "a: b"
         it "indents parameter sets" $ do
             "{a?b,c}:d" `shortIndentsTo` "{\n\
             \  a ? b,\n\
             \  c\n\
-            \}:\n\
-            \d"
+            \}: d"
             "{a,...}:b" `shortIndentsTo` "{\n\
             \  a,\n\
             \  ...\n\
-            \}:\n\
-            \b"
+            \}: b"
         it "indents let blocks" $ do
             "let a=b; in c" `shortIndentsTo` "let\n\
             \  a = b;\n\
@@ -157,3 +157,7 @@ main = hspec $ do
             "\"a\n\"" `shortIndentsTo` "''\n\
             \  a\n\
             \''"
+        it "indents function definitions" $ do
+            indentsTo 10 "foo: bar: { baz = foo; }" "foo: bar: {\n\
+            \  baz = foo;\n\
+            \}"

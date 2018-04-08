@@ -470,10 +470,7 @@ hasAttrL set attr =
 absI :: Params NExpr -> NExpr -> NixMonad ()
 absI par ex = do
     (col, max) <- get
-    if col + absL par ex <= max then
-        paramI par >> appendLine ": " >> exprI ex
-    else
-        paramI par >> appendLine ":" >> newLine >> exprI ex
+    paramI par >> appendLine ": " >> exprI ex
 
 absL :: Params NExpr -> NExpr -> Int
 absL par ex = paramL par + 2 + exprL ex
