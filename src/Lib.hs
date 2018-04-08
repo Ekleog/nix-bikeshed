@@ -445,9 +445,11 @@ hasAttrL set attr =
 
 absI :: Params NExpr -> NExpr -> NixMonad ()
 absI par ex = do
-    paramI par
-    appendLine ": "
-    exprI ex
+    (col, max) <- get
+    if col + absL par ex <= max then
+        paramI par >> appendLine ": " >> exprI ex
+    else
+        paramI par >> appendLine ":" >> newLine >> exprI ex
 
 absL :: Params NExpr -> NExpr -> Int
 absL par ex = paramL par + 2 + exprL ex
@@ -501,7 +503,7 @@ setI rec binds = do
     if binds == [] then appendLine "{}"
     else do
         (col, max) <- get
-        if col + setL False binds < max then do
+        if col + setL False binds <= max then do
             appendLine "{ "
             intercalateM (appendLine " ") $ map bindingI binds
             appendLine " }"

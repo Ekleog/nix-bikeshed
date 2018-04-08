@@ -125,3 +125,5 @@ main = hspec $ do
             \  foo = bar;\n\
             \  baz = quux;\n\
             \}"
+        it "indents function definitions" $ do
+            "a: b" `shortIndentsTo` "a:\nb"
