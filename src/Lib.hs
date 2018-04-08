@@ -458,25 +458,31 @@ paramL par = case par of
 
 paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = case set of
-        FixedParamSet m -> appendLine "{ " >> impl m >>appendLine " }"
-        VariadicParamSet m -> appendLine "{ " >> impl m >> appendLine ", ... }"
-    where
-        impl set =
-            intercalateM (appendLine ", ") (map (\(k, x) -> do
-                appendLine $ T.unpack k
-                maybe noop (\e -> appendLine " ? " >> exprI e) x
-            ) (M.toList set))
+        FixedParamSet m -> do
+            appendLine "{ "
+            paramSetContentsI (M.toList m)
+            appendLine " }"
+        VariadicParamSet m -> do
+            appendLine "{ "
+            paramSetContentsI (M.toList m)
+            appendLine ", ... }"
+
+paramSetContentsI :: [(T.Text, Maybe NExpr)] -> NixMonad ()
+paramSetContentsI set =
+    intercalateM (appendLine ", ") (map (\(k, x) -> do
+        appendLine $ T.unpack k
+        maybe noop (\e -> appendLine " ? " >> exprI e) x
+    ) set)
 
 paramSetL :: ParamSet NExpr -> Int
 paramSetL set = case set of
-        FixedParamSet m -> 4 + impl (M.toList m)
-        VariadicParamSet m -> 9 + impl (M.toList m)
-    where
-        impl l =
-            2 * (length l - 1) +
-            sum (map (
-                \(k, x) -> T.length k + maybe 0 (\e -> 3 + exprL e) x
-            ) l)
+        FixedParamSet m -> 4 + paramSetContentsL (M.toList m)
+        VariadicParamSet m -> 9 + paramSetContentsL (M.toList m)
+
+paramSetContentsL :: [(T.Text, Maybe NExpr)] -> Int
+paramSetContentsL l =
+    2 * (length l - 1) +
+    sum (map (\(k, x) -> T.length k + maybe 0 (\e -> 3 + exprL e) x) l)
 
 appI :: NExpr -> NExpr -> NixMonad ()
 appI f x = do
