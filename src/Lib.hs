@@ -457,7 +457,9 @@ absL par ex = paramL par + 2 + exprL ex
 paramI :: Params NExpr -> NixMonad ()
 paramI par = case par of
     Param p -> appendLine $ T.unpack p
-    ParamSet set name -> paramSetI set >> maybe noop (appendLine . T.unpack) name
+    ParamSet set name -> do
+        paramSetI set
+        maybe noop (\n -> appendLine " @ " >> appendLine (T.unpack n)) name
 
 paramL :: Params NExpr -> Int
 paramL par = case par of
@@ -502,8 +504,8 @@ paramSetContentsI intersperseLines set =
 
 paramSetL :: ParamSet NExpr -> Int
 paramSetL set = case set of
-        FixedParamSet m -> 4 + paramSetContentsL (M.toList m)
-        VariadicParamSet m -> 9 + paramSetContentsL (M.toList m)
+    FixedParamSet m -> 4 + paramSetContentsL (M.toList m)
+    VariadicParamSet m -> 9 + paramSetContentsL (M.toList m)
 
 paramSetContentsL :: [(T.Text, Maybe NExpr)] -> Int
 paramSetContentsL l =

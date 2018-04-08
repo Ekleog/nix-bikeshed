@@ -120,6 +120,8 @@ main = hspec $ do
         it "outputs parameter sets" $ do
             "{foo, bar?0, baz?{x=1;}}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo }: baz"
+        it "outputs named parameter sets" $ do
+            "{b}@a:b" `lineIndentsTo` "{ b } @ a: b"
         it "outputs variadic parameter sets" $ do
             "{foo, bar?0, baz?{x=1;},...}: baz" `lineIndentsTo`
                 "{ bar ? 0, baz ? { x = 1; }, foo, ... }: baz"
