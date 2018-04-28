@@ -239,6 +239,9 @@ paren s = appendLine "(" >> s >> appendLine ")"
 parenIf :: IndentMonad m => Bool -> m () -> m ()
 parenIf cond = if cond then paren else id
 
+parenExprI :: IndentMonad m => (Int -> Bool) -> NExpr -> m ()
+parenExprI pred e = parenIf (pred $ exprPrio e) (exprI e)
+
 bindingI :: IndentMonad m => Binding NExpr -> m ()
 bindingI b = case b of
     NamedVar path val -> do
@@ -253,7 +256,7 @@ listI :: IndentMonad m => [NExpr] -> m ()
 listI vals = do
     appendLine "["
     intercalateM (appendLine " ")
-                 (map (\e -> parenIf (listPrio <= exprPrio e) $ exprI e) vals)
+                 (map (parenExprI (listPrio <=)) vals)
     appendLine "]"
 
 pathI :: IndentMonad m => NAttrPath NExpr -> m ()
@@ -322,7 +325,7 @@ unOpStr op = case op of
 unaryOpI :: IndentMonad m => NUnaryOp -> NExpr -> m ()
 unaryOpI op ex = do
     appendLine $ unOpStr op
-    parenIf (unaryPrio op < exprPrio ex) (exprI ex)
+    parenExprI (unaryPrio op <) ex
 
 binOpStr :: NBinaryOp -> String
 binOpStr op = case op of
@@ -345,33 +348,33 @@ binOpStr op = case op of
 binOpOf :: NExpr -> NBinaryOp
 binOpOf (Fix (NBinary op _ _)) = op
 
-binaryOpNeedsParen :: Bool -> NBinaryOp -> NExpr -> Bool
-binaryOpNeedsParen isLeftChild par child =
-    binaryPrio par < exprPrio child || (
-        binaryPrio par == exprPrio child &&
+binaryOpNeedsParen :: Bool -> NBinaryOp -> NExpr -> Int -> Bool
+binaryOpNeedsParen isLeftChild par child prio =
+    binaryPrio par < prio || (
+        binaryPrio par == prio &&
         not ((if isLeftChild then id else flip) associates (binOpOf child) par)
     )
 
 binaryOpI :: IndentMonad m => NBinaryOp -> NExpr -> NExpr -> m ()
 binaryOpI op l r = do
-    parenIf (binaryOpNeedsParen True op l) (exprI l)
-    appendLine $ " " ++ binOpStr op ++ " "
-    parenIf (binaryOpNeedsParen False op r) (exprI r)
+    parenExprI (binaryOpNeedsParen True op l) l
+    appendLine $ " " <> binOpStr op <> " "
+    parenExprI (binaryOpNeedsParen False op r) r
 
 selectI :: IndentMonad m => NExpr -> NAttrPath NExpr -> Maybe NExpr -> m ()
 selectI set attr def = do
-    parenIf (selectPrio <= exprPrio set) (exprI set)
+    parenExprI (selectPrio <=) set
     appendLine "."
     pathI attr
     maybe noop
           (\x -> do
             appendLine " or "
-            parenIf (selectPrio <= exprPrio x) (exprI x))
+            parenExprI (selectPrio <=) x)
           def
 
 hasAttrI :: IndentMonad m => NExpr -> NAttrPath NExpr -> m ()
 hasAttrI set attr = do
-    parenIf (hasAttrPrio <= exprPrio set) (exprI set)
+    parenExprI (hasAttrPrio <=) set
     appendLine " ? "
     pathI attr
 
@@ -411,9 +414,9 @@ paramSetContentsI space set =
 
 appI :: IndentMonad m => NExpr -> NExpr -> m ()
 appI f x = do
-    parenIf (appPrio < exprPrio f) (exprI f)
+    parenExprI (appPrio <) f
     appendLine " "
-    parenIf (appPrio <= exprPrio x) (exprI x)
+    parenExprI (appPrio <=) x
 
 setI :: IndentMonad m => Bool -> [Binding NExpr] -> m ()
 setI rec binds = do
