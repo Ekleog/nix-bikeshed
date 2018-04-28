@@ -379,23 +379,17 @@ paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = tryOneLine $ do
         appendLine "{"
         indent breakableSpace
-        indent $ case set of
-            FixedParamSet m -> do
-                paramSetContentsI (M.toList m)
-            VariadicParamSet m -> do
-                paramSetContentsI (M.toList m)
-                appendLine ","
-                breakableSpace >> appendLine "..."
+        indent $ do
+            let (m, isVariadic) = case set of
+                        { FixedParamSet m -> (m, False); VariadicParamSet m -> (m, True) }
+            intercalateM
+                (appendLine "," >> breakableSpace)
+                (map (\(k, x) -> do
+                    appendLine $ T.unpack k
+                    maybe noop (\e -> appendLine " ? " >> exprI e) x
+                 ) (M.toList m))
+            when isVariadic $ appendLine "," >> breakableSpace >> appendLine "..."
         breakableSpace >> appendLine "}"
-
-paramSetContentsI :: [(T.Text, Maybe NExpr)] -> NixMonad ()
-paramSetContentsI set =
-    intercalateM
-        (appendLine "," >> breakableSpace)
-        (map (\(k, x) -> do
-            appendLine $ T.unpack k
-            maybe noop (\e -> appendLine " ? " >> exprI e) x
-         ) set)
 
 appI :: NExpr -> NExpr -> NixMonad ()
 appI f x = do
