@@ -129,25 +129,25 @@ indentExpr maximalLineLength a =
 
 -- *I functions return the string that fits the constraints
 exprI :: IndentMonad m => NExpr -> m ()
-exprI expr = case expr of
-    Fix (NConstant c) -> atomI c
-    Fix (NStr s) -> stringI s
-    Fix (NSym s) -> appendLine $ T.unpack s
-    Fix (NList vals) -> listI vals
-    Fix (NSet binds) -> setI False binds
-    Fix (NRecSet binds) -> setI True binds
-    Fix (NLiteralPath p) -> appendLine p
-    Fix (NEnvPath p) -> appendLine $ "<" ++ p ++ ">"
-    Fix (NUnary op ex) -> unaryOpI op ex
-    Fix (NBinary op l r) -> binaryOpI op l r
-    Fix (NSelect set attr def) -> selectI set attr def
-    Fix (NHasAttr set attr) -> hasAttrI set attr
-    Fix (NAbs param expr) -> absI param expr
-    Fix (NApp f x) -> appI f x
-    Fix (NLet binds ex) -> letI binds ex
-    Fix (NIf cond then_ else_) -> ifI cond then_ else_
-    Fix (NWith set expr) -> stmtI "with" set expr
-    Fix (NAssert test expr) -> stmtI "assert" test expr
+exprI (Fix expr) = case expr of
+    NConstant c -> atomI c
+    NStr s -> stringI s
+    NSym s -> appendLine $ T.unpack s
+    NList vals -> listI vals
+    NSet binds -> setI False binds
+    NRecSet binds -> setI True binds
+    NLiteralPath p -> appendLine p
+    NEnvPath p -> appendLine $ "<" ++ p ++ ">"
+    NUnary op ex -> unaryOpI op ex
+    NBinary op l r -> binaryOpI op l r
+    NSelect set attr def -> selectI set attr def
+    NHasAttr set attr -> hasAttrI set attr
+    NAbs param expr -> absI param expr
+    NApp f x -> appI f x
+    NLet binds ex -> letI binds ex
+    NIf cond then_ else_ -> ifI cond then_ else_
+    NWith set expr -> stmtI "with" set expr
+    NAssert test expr -> stmtI "assert" test expr
 
 -- *L functions return the length the expression would take if put all on one
 -- line
@@ -156,27 +156,27 @@ exprL = runCountMonad . exprI
 
 -- Less binds stronger
 exprPrio :: NExpr -> Int
-exprPrio expr = case expr of
+exprPrio (Fix expr) = case expr of
     -- See https://nixos.org/nix/manual/#table-operators
-    Fix (NConstant _) -> 0
-    Fix (NStr _) -> 0
-    Fix (NSym _) -> 0
-    Fix (NList _) -> 0
-    Fix (NSet _) -> 0
-    Fix (NRecSet _) -> 0
-    Fix (NLiteralPath _) -> 0
-    Fix (NEnvPath _) -> 0
-    Fix (NSelect _ _ _) -> selectPrio
-    Fix (NApp _ _) -> appPrio
-    Fix (NUnary op _) -> unaryPrio op
-    Fix (NHasAttr _ _) -> hasAttrPrio
-    Fix (NBinary op _ _) -> binaryPrio op
+    NConstant _ -> 0
+    NStr _ -> 0
+    NSym _ -> 0
+    NList _ -> 0
+    NSet _ -> 0
+    NRecSet _ -> 0
+    NLiteralPath _ -> 0
+    NEnvPath _ -> 0
+    NSelect _ _ _ -> selectPrio
+    NApp _ _ -> appPrio
+    NUnary op _ -> unaryPrio op
+    NHasAttr _ _ -> hasAttrPrio
+    NBinary op _ _ -> binaryPrio op
     -- No actual priority issue on these, they bind less
-    Fix (NAbs _ _) -> 100
-    Fix (NLet _ _) -> 100
-    Fix (NIf _ _ _) -> 100
-    Fix (NWith _ _) -> 100
-    Fix (NAssert _ _) -> 100
+    NAbs _ _ -> 100
+    NLet _ _ -> 100
+    NIf _ _ _ -> 100
+    NWith _ _ -> 100
+    NAssert _ _ -> 100
 
 selectPrio :: Int
 selectPrio = 1
@@ -293,10 +293,8 @@ stringI s = let t = case s of
                 newLine
                 foldM
                     (\lastEndedWithNewLine -> \item -> do
-                        let (endsWithNewLine, output) = escapeMultilineI item;
                         when lastEndedWithNewLine newLine
-                        output
-                        return endsWithNewLine)
+                        escapeMultilineI item)
                     False
                     t
             when lastEndedWithNewLine newLine
@@ -310,12 +308,15 @@ escapeAntiquotedI a = case a of
         exprI e
         appendLine "}"
 
--- returns (endsWithNewLine, output)
-escapeMultilineI :: IndentMonad m => Antiquoted T.Text NExpr -> (Bool, m ())
+-- returns endsWithNewLine
+escapeMultilineI :: IndentMonad m => Antiquoted T.Text NExpr -> m Bool
 escapeMultilineI a = case a of
-    Plain t -> (last (T.unpack t) == '\n',
-                intercalateM newLine $ map appendLine $ lines $ T.unpack t)
-    Antiquoted e -> (False, appendLine "${" >> exprI e >> appendLine "}")
+    Plain t -> do
+        intercalateM newLine $ map appendLine $ lines $ T.unpack t
+        return $ last (T.unpack t) == '\n'
+    Antiquoted e -> do
+        appendLine "${" >> exprI e >> appendLine "}"
+        return False
 
 unOpStr :: NUnaryOp -> String
 unOpStr op = case op of
@@ -445,7 +446,7 @@ ifI cond then_ else_ = do
     appendLine " then "
     exprI then_
     appendLine " else "
-    exprI else_;
+    exprI else_
 
 stmtI :: IndentMonad m => String -> NExpr -> NExpr -> m ()
 stmtI kw it expr = do
