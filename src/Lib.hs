@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, RankNTypes #-}
 module Lib where
 
 import Control.Monad.State.Strict
@@ -63,6 +63,11 @@ class Monad m => IndentMonad m where
     newLine :: m ()
     indent :: m a -> m a
     hasSpaceFor :: Int -> m Bool
+
+-- If there is enough space on the line, run (x True), otherwise run (x False)
+-- In CountMonad, this simply runs (x True)
+tryOneLine :: forall m. IndentMonad m => (forall n. IndentMonad n => Bool -> n ()) -> m ()
+tryOneLine x = hasSpaceFor (runCountMonad (x True)) >>= x
 
 data WriteItem = WriteItem
     { isNewLine :: Bool
@@ -272,10 +277,9 @@ atomI a = case a of
     NUri t -> appendLine $ T.unpack t
 
 stringI :: IndentMonad m => NString NExpr -> m ()
-stringI s = case s of
-    DoubleQuoted t -> stringI (Indented t) -- ignore string type
-    Indented t -> do
-        b <- hasSpaceFor (runCountMonad $ stringI (Indented t))
+stringI s = let t = case s of
+                    { DoubleQuoted t -> t; Indented t -> t }
+    in tryOneLine (\b ->
         if b then do
             appendLine "\""
             mapM_ escapeAntiquotedI t
@@ -293,7 +297,7 @@ stringI s = case s of
                     False
                     t
             when lastEndedWithNewLine newLine
-            appendLine "''"
+            appendLine "''")
 
 escapeAntiquotedI :: IndentMonad m => Antiquoted T.Text NExpr -> m ()
 escapeAntiquotedI a = case a of
@@ -382,36 +386,24 @@ paramI par = case par of
         maybe noop (\n -> appendLine " @ " >> appendLine (T.unpack n)) name
 
 paramSetI :: IndentMonad m => ParamSet NExpr -> m ()
-paramSetI set = do
-    b <- hasSpaceFor (runCountMonad $ paramSetI set)
-    case set of
-        FixedParamSet m -> do
-            if b then do
-                appendLine "{ "
-                paramSetContentsI False (M.toList m)
-                appendLine " }"
-            else do
-                appendLine "{"
-                indent $ newLine >> paramSetContentsI True (M.toList m)
-                newLine >> appendLine "}"
-        VariadicParamSet m -> do
-            if b then do
-                appendLine "{ "
-                paramSetContentsI False (M.toList m)
-                appendLine ", ... }"
-            else do
-                appendLine "{"
-                indent $ do
-                    newLine
-                    paramSetContentsI True (M.toList m) >> appendLine ","
-                    newLine >> appendLine "..."
-                newLine >> appendLine "}"
+paramSetI set = tryOneLine
+    (\oneLine -> do
+        let space = if oneLine then appendLine " " else newLine
+        appendLine "{"
+        indent $ space
+        indent $ case set of
+            FixedParamSet m -> do
+                paramSetContentsI space (M.toList m)
+            VariadicParamSet m -> do
+                paramSetContentsI space (M.toList m)
+                appendLine ","
+                space >> appendLine "..."
+        space >> appendLine "}")
 
-paramSetContentsI :: IndentMonad m => Bool -> [(T.Text, Maybe NExpr)] -> m ()
-paramSetContentsI intersperseLines set =
+paramSetContentsI :: IndentMonad m => m () -> [(T.Text, Maybe NExpr)] -> m ()
+paramSetContentsI space set =
     intercalateM
-        (if intersperseLines then appendLine "," >> newLine
-         else appendLine ", ")
+        (appendLine "," >> space)
         (map (\(k, x) -> do
             appendLine $ T.unpack k
             maybe noop (\e -> appendLine " ? " >> exprI e) x
@@ -427,30 +419,21 @@ setI :: IndentMonad m => Bool -> [Binding NExpr] -> m ()
 setI rec binds = do
     when rec $ appendLine "rec "
     if binds == [] then appendLine "{}"
-    else do
-        b <- hasSpaceFor (runCountMonad $ setI False binds)
-        if b then do
-            appendLine "{ "
-            intercalateM (appendLine " ") $ map bindingI binds
-            appendLine " }"
-        else do
+    else tryOneLine
+        (\oneLine -> do
+            let space = if oneLine then appendLine " " else newLine
             appendLine "{"
-            indent $ newLine >> intercalateM newLine (map bindingI binds)
-            newLine >> appendLine "}"
+            indent $ space >> intercalateM space (map bindingI binds)
+            space >> appendLine "}")
 
 letI :: IndentMonad m => [Binding NExpr] -> NExpr -> m ()
-letI binds ex = do
-    b <- hasSpaceFor (runCountMonad $ letI binds ex)
-    if b then do
-        appendLine "let "
-        intercalateM (appendLine " ") (map bindingI binds)
-        appendLine " in "
-        exprI ex
-    else do
+letI binds ex = tryOneLine
+    (\oneLine -> do
+        let space = if oneLine then appendLine " " else newLine
         appendLine "let"
-        indent $ newLine >> intercalateM newLine (map bindingI binds)
-        newLine >> appendLine "in" >> newLine
-        exprI ex
+        indent $ space >> intercalateM space (map bindingI binds)
+        space >> appendLine "in" >> space
+        exprI ex)
 
 ifI :: IndentMonad m => NExpr -> NExpr -> NExpr -> m ()
 ifI cond then_ else_ = do
