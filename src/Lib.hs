@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, LambdaCase #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, OverloadedStrings, LambdaCase #-}
 module Lib where
 
 import Control.Monad.State.Strict
@@ -63,7 +63,7 @@ isEquivalentTo (Fix a) (Fix b) = case (fmap WrapNExpr a, fmap WrapNExpr b) of
 
 data WriteItem =
       NewLineItem
-    | TextItem String
+    | TextItem T.Text
     | BlockItem [WriteItem]
     | IndentedItem WriteItem
     | BreakableItem Int WriteItem
@@ -72,19 +72,19 @@ data WriteItem =
     | BreakableSpaceItem
     deriving (Eq)
 
-flattenLineTree :: Int -> [WriteItem] -> String
-flattenLineTree maximalLineLength = concat . map (execWriter . aux 0 True False)
+flattenLineTree :: Int -> [WriteItem] -> T.Text
+flattenLineTree maximalLineLength = T.concat . map (execWriter . aux 0 True False)
     where
         indentSize = 2
-        newline idt = tell $ "\n" <> replicate idt ' '
-        aux :: Int -> Bool -> Bool -> WriteItem -> Writer String ()
+        newline idt = tell $ "\n" <> T.replicate idt " "
+        aux :: Int -> Bool -> Bool -> WriteItem -> Writer T.Text ()
         aux idt break quoted = \case
             NewLineItem | quoted && not break ->
                 tell "\\n"
             NewLineItem ->
                 newline idt
             TextItem str | quoted && not break ->
-                tell . tail . init . show $ str
+                tell . T.pack . tail . init . show $ str
             TextItem str ->
                 tell str
             BlockItem ws ->
@@ -114,10 +114,10 @@ runNixMonad = snd . execWriter
 runCount :: NixMonad () -> Int
 runCount = getSum . fst . execWriter
 
-appendLine :: String -> NixMonad ()
-appendLine x = tell (Sum $ length x, [TextItem x])
+appendLine :: T.Text -> NixMonad ()
+appendLine x = tell (Sum $ T.length x, [TextItem x])
 
-appendQuotedLine :: String -> NixMonad ()
+appendQuotedLine :: T.Text -> NixMonad ()
 appendQuotedLine x = tell (Sum $ length (show x) - 2, [TextItem x])
 
 newLine :: NixMonad ()
@@ -155,19 +155,19 @@ intercalateM v l = sequence_ $ intersperse v l
 indentExpr :: Int -> NExpr -> String
 indentExpr maximalLineLength a =
     let lineTree = runNixMonad (exprI a) in
-    flattenLineTree maximalLineLength lineTree
+        T.unpack $ flattenLineTree maximalLineLength lineTree
 
 -- *I functions return the string that fits the constraints
 exprI :: NExpr -> NixMonad ()
 exprI (Fix expr) = case expr of
     NConstant c -> atomI c
     NStr s -> stringI s
-    NSym s -> appendLine $ T.unpack s
+    NSym s -> appendLine s
     NList vals -> listI vals
     NSet binds -> setI False binds
     NRecSet binds -> setI True binds
-    NLiteralPath p -> appendLine p
-    NEnvPath p -> appendLine $ "<" ++ p ++ ">"
+    NLiteralPath p -> appendLine $ T.pack p
+    NEnvPath p -> appendLine $ T.pack $ "<" ++ p ++ ">"
     NUnary op ex -> unaryOpI op ex
     NBinary op l r -> binaryOpI op l r
     NSelect set attr def -> selectI set attr def
@@ -210,11 +210,11 @@ instance Ord Prio where
 binOpOf :: Prio -> String
 binOpOf (HNixPrio op) = Nix.operatorName op
 
-binOpStr :: NBinaryOp -> String
-binOpStr = Nix.operatorName . Nix.getBinaryOperator
+binOpStr :: NBinaryOp -> T.Text
+binOpStr = T.pack . Nix.operatorName . Nix.getBinaryOperator
 
-unOpStr :: NUnaryOp -> String
-unOpStr = Nix.operatorName . Nix.getUnaryOperator
+unOpStr :: NUnaryOp -> T.Text
+unOpStr = T.pack . Nix.operatorName . Nix.getUnaryOperator
 
 -- Less binds stronger
 exprPrio :: NExpr -> Prio
@@ -303,7 +303,7 @@ pathI p = intercalateM (appendLine ".") $ map keyNameI p
 
 keyNameI :: NKeyName NExpr -> NixMonad ()
 keyNameI kn = case kn of
-    StaticKey k -> appendLine $ T.unpack k
+    StaticKey k -> appendLine k
     DynamicKey (Plain s) -> stringI s
     DynamicKey (Antiquoted e) -> do
         appendLine "${"
@@ -311,13 +311,13 @@ keyNameI kn = case kn of
         appendLine "}"
 
 atomI :: NAtom -> NixMonad ()
-atomI = appendLine . T.unpack . atomText
+atomI = appendLine . atomText
 
 stringI :: NString NExpr -> NixMonad ()
 stringI s = let
         doLine :: [Antiquoted T.Text NExpr] -> NixMonad ()
         doLine = mapM_ $ \case
-                    Plain t -> appendQuotedLine $ T.unpack t
+                    Plain t -> appendQuotedLine t
                     Antiquoted e -> do
                         appendLine "${"
                         antiquote $ exprI e
@@ -370,10 +370,10 @@ absI par ex = paramI par >> appendLine ": " >> exprI ex
 
 paramI :: Params NExpr -> NixMonad ()
 paramI par = case par of
-    Param p -> appendLine $ T.unpack p
+    Param p -> appendLine p
     ParamSet set name -> do
         paramSetI set
-        maybe noop (\n -> appendLine " @ " >> appendLine (T.unpack n)) name
+        maybe noop (\n -> appendLine " @ " >> appendLine n) name
 
 paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = tryOneLine $ do
@@ -385,7 +385,7 @@ paramSetI set = tryOneLine $ do
             intercalateM
                 (appendLine "," >> breakableSpace)
                 (map (\(k, x) -> do
-                    appendLine $ T.unpack k
+                    appendLine k
                     maybe noop (\e -> appendLine " ? " >> exprI e) x
                  ) (M.toList m))
             when isVariadic $ appendLine "," >> breakableSpace >> appendLine "..."
@@ -422,9 +422,9 @@ ifI cond then_ else_ = do
     appendLine " else "
     exprI else_
 
-stmtI :: String -> NExpr -> NExpr -> NixMonad ()
+stmtI :: T.Text -> NExpr -> NExpr -> NixMonad ()
 stmtI kw it expr = do
-    appendLine $ kw ++ " "
+    appendLine $ kw <> " "
     exprI it
     appendLine "; "
     exprI expr
