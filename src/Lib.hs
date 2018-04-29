@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, TypeSynonymInstances, RankNTypes #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, LambdaCase #-}
 module Lib where
 
 import Control.Monad.State.Strict
@@ -17,6 +17,7 @@ import Nix.Expr
 import Nix.Parser
 import Nix.Pretty
 import qualified Nix.Parser.Operators as Nix
+import qualified Nix.StringOperations as Nix
 
 maxLineLength = 80
 
@@ -60,61 +61,89 @@ isEquivalentTo (Fix a) (Fix b) = case (fmap WrapNExpr a, fmap WrapNExpr b) of
     (a, b) -> a == b
 
 
-class Monad m => IndentMonad m where
-    appendLine :: String -> m ()
-    newLine :: m ()
-    indent :: m a -> m a
-    hasSpaceFor :: Int -> m Bool
+data WriteItem =
+      NewLineItem
+    | TextItem String
+    | BlockItem [WriteItem]
+    | IndentedItem WriteItem
+    | BreakableItem Int WriteItem
+    | QuotedItem WriteItem
+    | AntiQuotedItem WriteItem
+    | BreakableSpaceItem
+    deriving (Eq)
 
--- If there is enough space on the line, run (x True), otherwise run (x False)
--- In CountMonad, this simply runs (x True)
-tryOneLine :: forall m. IndentMonad m => (forall n. IndentMonad n => Bool -> n ()) -> m ()
-tryOneLine x = hasSpaceFor (runCountMonad (x True)) >>= x
-
-data WriteItem = WriteItem
-    { isNewLine :: Bool
-    , lineBegin :: String
-    , text :: String }
-type ColumnInfo = (Int, Int) -- (current column, maximal column)
-
-type NixMonad = WriterT [WriteItem] (State ColumnInfo)
-
-runNixMonad :: Int -> NixMonad () -> [WriteItem]
-runNixMonad maximalLineLength m = evalState (execWriterT m) (0, maximalLineLength)
-
-instance IndentMonad NixMonad where
-    appendLine x = do
-        tell [WriteItem { isNewLine = False, lineBegin = "", text = x }]
-        (col, max) <- get
-        put $ (col + length x, max)
-
-    newLine = do
-        tell [WriteItem { isNewLine = True, lineBegin = "", text = "" }]
-        (_, max) <- get
-        put $ (0, max)
-
-    indent x = do
-        (col, max) <- get
-        put $ (col + 2, max)
-        res <- flip censor x $ fmap $ \x -> x { lineBegin = "  " ++ lineBegin x }
-        put $ (col, max)
-        return res
-
-    hasSpaceFor x = do
-        (col, max) <- get
-        return (col + x <= max)
+flattenLineTree :: Int -> [WriteItem] -> String
+flattenLineTree maximalLineLength = concat . map (execWriter . aux 0 True False)
+    where
+        indentSize = 2
+        newline idt = tell $ "\n" <> replicate idt ' '
+        aux :: Int -> Bool -> Bool -> WriteItem -> Writer String ()
+        aux idt break quoted = \case
+            NewLineItem | quoted && not break ->
+                tell "\\n"
+            NewLineItem ->
+                newline idt
+            TextItem str | quoted && not break ->
+                tell . tail . init . show $ str
+            TextItem str ->
+                tell str
+            BlockItem ws ->
+                mapM_ (aux idt break quoted) ws
+            IndentedItem item ->
+                aux (idt + indentSize) break quoted item
+            BreakableItem len item ->
+                aux idt (idt + len > maximalLineLength) quoted item
+            QuotedItem item -> do
+                tell $ if break then "''" else "\""
+                when break $ aux idt break False $ IndentedItem NewLineItem
+                aux idt break True item
+                tell $ if break then "''" else "\""
+            AntiQuotedItem item ->
+                aux idt break False item
+            BreakableSpaceItem | break ->
+                newline idt
+            BreakableSpaceItem ->
+                tell " "
 
 
-type CountMonad = Writer (Sum Int)
+type NixMonad = Writer (Sum Int, [WriteItem])
 
-runCountMonad :: CountMonad () -> Int
-runCountMonad = getSum . execWriter
+runNixMonad :: NixMonad () -> [WriteItem]
+runNixMonad = snd . execWriter
 
-instance IndentMonad CountMonad where
-    appendLine x = tell (Sum $ length x)
-    newLine = return ()
-    indent x = x
-    hasSpaceFor x = return True
+runCount :: NixMonad () -> Int
+runCount = getSum . fst . execWriter
+
+appendLine :: String -> NixMonad ()
+appendLine x = tell (Sum $ length x, [TextItem x])
+
+appendQuotedLine :: String -> NixMonad ()
+appendQuotedLine x = tell (Sum $ length (show x) - 2, [TextItem x])
+
+newLine :: NixMonad ()
+newLine = tell (Sum 0, [NewLineItem])
+
+quotedNewLine :: NixMonad ()
+quotedNewLine = tell (Sum 2, [NewLineItem])
+
+indent :: NixMonad a -> NixMonad a
+indent = censor $ \(n, ws) -> (n, [IndentedItem $ BlockItem ws])
+
+tryOneLine :: NixMonad () -> NixMonad ()
+tryOneLine = censor $ \(n, ws) -> (n, [BreakableItem (getSum n) $ BlockItem ws])
+
+breakableSpace :: NixMonad ()
+breakableSpace = tell (Sum 1, [BreakableSpaceItem])
+
+antiquote :: NixMonad () -> NixMonad ()
+antiquote = censor (\(n, ws) -> (n, [AntiQuotedItem $ BlockItem ws]))
+
+quote :: NixMonad () -> NixMonad ()
+quote x =
+    censor (\(n, ws) -> (n, [QuotedItem $ BlockItem ws])) $ do
+        tell (Sum 2, []) -- quotes
+        x
+
 
 noop :: Monad m => m ()
 noop = return ()
@@ -122,15 +151,14 @@ noop = return ()
 intercalateM :: Monad m => m () -> [m ()] -> m ()
 intercalateM v l = sequence_ $ intersperse v l
 
+
 indentExpr :: Int -> NExpr -> String
 indentExpr maximalLineLength a =
-    let nix = runNixMonad maximalLineLength (exprI a) in
-    concatMap (\wi ->
-        (if isNewLine wi then "\n" ++ lineBegin wi else "") ++ text wi
-    ) nix
+    let lineTree = runNixMonad (exprI a) in
+    flattenLineTree maximalLineLength lineTree
 
 -- *I functions return the string that fits the constraints
-exprI :: IndentMonad m => NExpr -> m ()
+exprI :: NExpr -> NixMonad ()
 exprI (Fix expr) = case expr of
     NConstant c -> atomI c
     NStr s -> stringI s
@@ -154,7 +182,7 @@ exprI (Fix expr) = case expr of
 -- *L functions return the length the expression would take if put all on one
 -- line
 exprL :: NExpr -> Int
-exprL = runCountMonad . exprI
+exprL = runCount . exprI
 
 
 data Prio
@@ -236,13 +264,13 @@ associates l r = case (binOpOf l, binOpOf r) of
     -- //
     ("//", "//") -> True
 
-paren :: IndentMonad m => m () -> m ()
+paren :: NixMonad () -> NixMonad ()
 paren s = appendLine "(" >> s >> appendLine ")"
 
-parenIf :: IndentMonad m => Bool -> m () -> m ()
+parenIf :: Bool -> NixMonad () -> NixMonad ()
 parenIf cond = if cond then paren else id
 
-parenExprI :: IndentMonad m => (Prio -> Bool) -> NExpr -> m ()
+parenExprI :: (Prio -> Bool) -> NExpr -> NixMonad ()
 parenExprI pred e = parenIf (pred $ exprPrio e) (exprI e)
 
 binaryOpNeedsParen :: Bool -> Prio -> Prio -> Bool
@@ -253,7 +281,7 @@ binaryOpNeedsParen isLeftChild opprio childprio =
             associates childprio opprio)
     )
 
-bindingI :: IndentMonad m => Binding NExpr -> m ()
+bindingI :: Binding NExpr -> NixMonad ()
 bindingI b = case b of
     NamedVar path val -> do
         pathI path >> appendLine " = " >> exprI val >> appendLine ";"
@@ -263,17 +291,17 @@ bindingI b = case b of
         intercalateM (appendLine " ") (map keyNameI vars)
         appendLine ";"
 
-listI :: IndentMonad m => [NExpr] -> m ()
+listI :: [NExpr] -> NixMonad ()
 listI vals = do
     appendLine "["
     intercalateM (appendLine " ")
                  (map (parenExprI (listPrio <=)) vals)
     appendLine "]"
 
-pathI :: IndentMonad m => NAttrPath NExpr -> m ()
+pathI :: NAttrPath NExpr -> NixMonad ()
 pathI p = intercalateM (appendLine ".") $ map keyNameI p
 
-keyNameI :: IndentMonad m => NKeyName NExpr -> m ()
+keyNameI :: NKeyName NExpr -> NixMonad ()
 keyNameI kn = case kn of
     StaticKey k -> appendLine $ T.unpack k
     DynamicKey (Plain s) -> stringI s
@@ -282,61 +310,45 @@ keyNameI kn = case kn of
         exprI e
         appendLine "}"
 
-atomI :: IndentMonad m => NAtom -> m ()
+atomI :: NAtom -> NixMonad ()
 atomI = appendLine . T.unpack . atomText
 
-stringI :: IndentMonad m => NString NExpr -> m ()
-stringI s = let t = case s of
-                    { DoubleQuoted t -> t; Indented t -> t }
-    in tryOneLine (\b ->
-        if b then do
-            appendLine "\""
-            mapM_ escapeAntiquotedI t
-            appendLine "\""
-        else do
-            appendLine "''"
-            lastEndedWithNewLine <- indent $ do
-                newLine
-                foldM
-                    (\lastEndedWithNewLine -> \item -> do
-                        when lastEndedWithNewLine newLine
-                        escapeMultilineI item)
-                    False
-                    t
-            when lastEndedWithNewLine newLine
-            appendLine "''")
+stringI :: NString NExpr -> NixMonad ()
+stringI s = let
+        doLine :: [Antiquoted T.Text NExpr] -> NixMonad ()
+        doLine = mapM_ $ \case
+                    Plain t -> appendQuotedLine $ T.unpack t
+                    Antiquoted e -> do
+                        appendLine "${"
+                        antiquote $ exprI e
+                        appendLine "}"
 
-escapeAntiquotedI :: IndentMonad m => Antiquoted T.Text NExpr -> m ()
-escapeAntiquotedI a = case a of
-    Plain t -> appendLine $ tail $ init $ show $ T.unpack t
-    Antiquoted e -> do
-        appendLine "${"
-        exprI e
-        appendLine "}"
+        t = case s of { DoubleQuoted t -> t; Indented t -> t }
+        lines = Nix.splitLines t
+        (lines', endsWithNewLine) =
+            if (last lines == [Plain $ T.pack ""]) -- if ends with newline
+               then (init lines, True)
+               else (lines, False)
 
--- returns endsWithNewLine
-escapeMultilineI :: IndentMonad m => Antiquoted T.Text NExpr -> m Bool
-escapeMultilineI a = case a of
-    Plain t -> do
-        intercalateM newLine $ map appendLine $ lines $ T.unpack t
-        return $ last (T.unpack t) == '\n'
-    Antiquoted e -> do
-        appendLine "${" >> exprI e >> appendLine "}"
-        return False
+    in tryOneLine $ quote $ do
+        indent $
+            intercalateM quotedNewLine $
+                map doLine lines'
+        when endsWithNewLine newLine
 
-unaryOpI :: IndentMonad m => NUnaryOp -> NExpr -> m ()
+unaryOpI :: NUnaryOp -> NExpr -> NixMonad ()
 unaryOpI op ex = do
     appendLine $ unOpStr op
     parenExprI (unaryPrio op <) ex
 
 
-binaryOpI :: IndentMonad m => NBinaryOp -> NExpr -> NExpr -> m ()
+binaryOpI :: NBinaryOp -> NExpr -> NExpr -> NixMonad ()
 binaryOpI op l r = do
     parenExprI (binaryOpNeedsParen True (binaryPrio op)) l
     appendLine $ " " <> binOpStr op <> " "
     parenExprI (binaryOpNeedsParen False (binaryPrio op)) r
 
-selectI :: IndentMonad m => NExpr -> NAttrPath NExpr -> Maybe NExpr -> m ()
+selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> NixMonad ()
 selectI set attr def = do
     parenExprI (selectPrio <=) set
     appendLine "."
@@ -347,73 +359,67 @@ selectI set attr def = do
             parenExprI (selectPrio <=) x)
           def
 
-hasAttrI :: IndentMonad m => NExpr -> NAttrPath NExpr -> m ()
+hasAttrI :: NExpr -> NAttrPath NExpr -> NixMonad ()
 hasAttrI set attr = do
     parenExprI (hasAttrPrio <=) set
     appendLine " ? "
     pathI attr
 
-absI :: IndentMonad m => Params NExpr -> NExpr -> m ()
+absI :: Params NExpr -> NExpr -> NixMonad ()
 absI par ex = paramI par >> appendLine ": " >> exprI ex
 
-paramI :: IndentMonad m => Params NExpr -> m ()
+paramI :: Params NExpr -> NixMonad ()
 paramI par = case par of
     Param p -> appendLine $ T.unpack p
     ParamSet set name -> do
         paramSetI set
         maybe noop (\n -> appendLine " @ " >> appendLine (T.unpack n)) name
 
-paramSetI :: IndentMonad m => ParamSet NExpr -> m ()
-paramSetI set = tryOneLine
-    (\oneLine -> do
-        let space = if oneLine then appendLine " " else newLine
+paramSetI :: ParamSet NExpr -> NixMonad ()
+paramSetI set = tryOneLine $ do
         appendLine "{"
-        indent $ space
+        indent breakableSpace
         indent $ case set of
             FixedParamSet m -> do
-                paramSetContentsI space (M.toList m)
+                paramSetContentsI (M.toList m)
             VariadicParamSet m -> do
-                paramSetContentsI space (M.toList m)
+                paramSetContentsI (M.toList m)
                 appendLine ","
-                space >> appendLine "..."
-        space >> appendLine "}")
+                breakableSpace >> appendLine "..."
+        breakableSpace >> appendLine "}"
 
-paramSetContentsI :: IndentMonad m => m () -> [(T.Text, Maybe NExpr)] -> m ()
-paramSetContentsI space set =
+paramSetContentsI :: [(T.Text, Maybe NExpr)] -> NixMonad ()
+paramSetContentsI set =
     intercalateM
-        (appendLine "," >> space)
+        (appendLine "," >> breakableSpace)
         (map (\(k, x) -> do
             appendLine $ T.unpack k
             maybe noop (\e -> appendLine " ? " >> exprI e) x
          ) set)
 
-appI :: IndentMonad m => NExpr -> NExpr -> m ()
+appI :: NExpr -> NExpr -> NixMonad ()
 appI f x = do
     parenExprI (appPrio <) f
     appendLine " "
     parenExprI (appPrio <=) x
 
-setI :: IndentMonad m => Bool -> [Binding NExpr] -> m ()
+setI :: Bool -> [Binding NExpr] -> NixMonad ()
 setI rec binds = do
     when rec $ appendLine "rec "
     if binds == [] then appendLine "{}"
-    else tryOneLine
-        (\oneLine -> do
-            let space = if oneLine then appendLine " " else newLine
+    else tryOneLine $ do
             appendLine "{"
-            indent $ space >> intercalateM space (map bindingI binds)
-            space >> appendLine "}")
+            indent $ breakableSpace >> intercalateM breakableSpace (map bindingI binds)
+            breakableSpace >> appendLine "}"
 
-letI :: IndentMonad m => [Binding NExpr] -> NExpr -> m ()
-letI binds ex = tryOneLine
-    (\oneLine -> do
-        let space = if oneLine then appendLine " " else newLine
+letI :: [Binding NExpr] -> NExpr -> NixMonad ()
+letI binds ex = tryOneLine $ do
         appendLine "let"
-        indent $ space >> intercalateM space (map bindingI binds)
-        space >> appendLine "in" >> space
-        exprI ex)
+        indent $ breakableSpace >> intercalateM breakableSpace (map bindingI binds)
+        breakableSpace >> appendLine "in" >> breakableSpace
+        exprI ex
 
-ifI :: IndentMonad m => NExpr -> NExpr -> NExpr -> m ()
+ifI :: NExpr -> NExpr -> NExpr -> NixMonad ()
 ifI cond then_ else_ = do
     appendLine "if "
     exprI cond
@@ -422,7 +428,7 @@ ifI cond then_ else_ = do
     appendLine " else "
     exprI else_
 
-stmtI :: IndentMonad m => String -> NExpr -> NExpr -> m ()
+stmtI :: String -> NExpr -> NExpr -> NixMonad ()
 stmtI kw it expr = do
     appendLine $ kw ++ " "
     exprI it
