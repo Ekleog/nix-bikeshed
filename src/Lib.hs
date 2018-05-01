@@ -15,6 +15,8 @@ import Debug.Trace
 import Nix.Atoms
 import Nix.Expr
 import Nix.Parser
+import Nix.Pretty
+import qualified Nix.Parser.Operators as Nix
 
 maxLineLength = 80
 
@@ -154,84 +156,85 @@ exprI (Fix expr) = case expr of
 exprL :: NExpr -> Int
 exprL = runCountMonad . exprI
 
+
+data Prio
+    = NoPrio
+    | HNixPrio Nix.OperatorInfo
+    | MaxPrio
+
+instance Eq Prio where
+    NoPrio == NoPrio = True
+    MaxPrio == MaxPrio = True
+    HNixPrio x == HNixPrio y =
+        Nix.precedence x == Nix.precedence y
+    _ == _ = False
+
+instance Ord Prio where
+    NoPrio `compare` NoPrio = EQ
+    NoPrio `compare` _ = LT
+    MaxPrio `compare` MaxPrio = EQ
+    MaxPrio `compare` _ = GT
+    _ `compare` NoPrio = GT
+    _ `compare` MaxPrio = LT
+    HNixPrio x `compare` HNixPrio y =
+        Nix.precedence y `compare` Nix.precedence x
+
+binOpOf :: Prio -> String
+binOpOf (HNixPrio op) = Nix.operatorName op
+
+binOpStr :: NBinaryOp -> String
+binOpStr = Nix.operatorName . Nix.getBinaryOperator
+
+unOpStr :: NUnaryOp -> String
+unOpStr = Nix.operatorName . Nix.getUnaryOperator
+
 -- Less binds stronger
-exprPrio :: NExpr -> Int
+exprPrio :: NExpr -> Prio
 exprPrio (Fix expr) = case expr of
     -- See https://nixos.org/nix/manual/#table-operators
-    NConstant _ -> 0
-    NStr _ -> 0
-    NSym _ -> 0
-    NList _ -> 0
-    NSet _ -> 0
-    NRecSet _ -> 0
-    NLiteralPath _ -> 0
-    NEnvPath _ -> 0
     NSelect _ _ _ -> selectPrio
     NApp _ _ -> appPrio
     NUnary op _ -> unaryPrio op
     NHasAttr _ _ -> hasAttrPrio
     NBinary op _ _ -> binaryPrio op
-    -- No actual priority issue on these, they bind less
-    NAbs _ _ -> 100
-    NLet _ _ -> 100
-    NIf _ _ _ -> 100
-    NWith _ _ -> 100
-    NAssert _ _ -> 100
+    NAbs _ _ -> MaxPrio
+    NLet _ _ -> MaxPrio
+    NIf _ _ _ -> MaxPrio
+    NWith _ _ -> MaxPrio
+    NAssert _ _ -> MaxPrio
+    _ -> NoPrio
 
-selectPrio :: Int
-selectPrio = 1
+listPrio, appPrio, selectPrio, hasAttrPrio :: Prio
+listPrio = HNixPrio Nix.appOp
+appPrio = HNixPrio Nix.appOp
+selectPrio = HNixPrio Nix.selectOp
+hasAttrPrio = HNixPrio Nix.hasAttrOp
 
-listPrio :: Int
-listPrio = 2
+unaryPrio :: NUnaryOp -> Prio
+unaryPrio = HNixPrio . Nix.getUnaryOperator
+binaryPrio :: NBinaryOp -> Prio
+binaryPrio = HNixPrio . Nix.getBinaryOperator
 
-appPrio :: Int
-appPrio = 2
 
-unaryPrio :: NUnaryOp -> Int
-unaryPrio op = case op of
-    NNeg -> 3
-    NNot -> 8
-
-hasAttrPrio :: Int
-hasAttrPrio = 4
-
-binaryPrio :: NBinaryOp -> Int
-binaryPrio op = case op of
-    NConcat -> 5
-    NMult -> 6
-    NDiv -> 6
-    NPlus -> 7
-    NMinus -> 7
-    NUpdate -> 9
-    NLt -> 10
-    NLte -> 10
-    NGt -> 10
-    NGte -> 10
-    NEq -> 11
-    NNEq -> 11
-    NAnd -> 12
-    NOr -> 13
-    NImpl -> 14
-
-associates :: NBinaryOp -> NBinaryOp -> Bool
-associates l r = case (l, r) of
+associates :: Prio -> Prio -> Bool
+associates l r = case (binOpOf l, binOpOf r) of
     -- *, /
-    (NMult, NMult) -> True
-    (NMult, NDiv) -> True
-    (NDiv, NMult) -> False
-    (NDiv, NDiv) -> False
+    ("*", "*") -> True
+    ("*", "/") -> True
+    ("/", "*") -> False
+    ("/", "/") -> False
     -- +, -
-    (NPlus, NPlus) -> True
-    (NPlus, NMinus) -> True
-    (NMinus, NPlus) -> False
-    (NMinus, NMinus) -> False
+    ("+", "+") -> True
+    ("+", "-") -> True
+    ("-", "+") -> False
+    ("-", "-") -> False
     -- ==, !=
-    (NEq, NEq) -> False
-    (NEq, NNEq) -> False
-    (NNEq, NEq) -> False
-    (NNEq, NNEq) -> False
+    ("==", "==") -> False
+    ("==", "!=") -> False
+    ("!=", "==") -> False
+    ("!=", "!=") -> False
     -- //
-    (NUpdate, NUpdate) -> True
+    ("//", "//") -> True
 
 paren :: IndentMonad m => m () -> m ()
 paren s = appendLine "(" >> s >> appendLine ")"
@@ -239,8 +242,16 @@ paren s = appendLine "(" >> s >> appendLine ")"
 parenIf :: IndentMonad m => Bool -> m () -> m ()
 parenIf cond = if cond then paren else id
 
-parenExprI :: IndentMonad m => (Int -> Bool) -> NExpr -> m ()
+parenExprI :: IndentMonad m => (Prio -> Bool) -> NExpr -> m ()
 parenExprI pred e = parenIf (pred $ exprPrio e) (exprI e)
+
+binaryOpNeedsParen :: Bool -> Prio -> Prio -> Bool
+binaryOpNeedsParen isLeftChild opprio childprio =
+    opprio < childprio || (
+        opprio == childprio &&
+        not ((if isLeftChild then id else flip)
+            associates childprio opprio)
+    )
 
 bindingI :: IndentMonad m => Binding NExpr -> m ()
 bindingI b = case b of
@@ -272,12 +283,7 @@ keyNameI kn = case kn of
         appendLine "}"
 
 atomI :: IndentMonad m => NAtom -> m ()
-atomI a = case a of
-    NInt i -> appendLine $ show i
-    NBool True -> appendLine $ "true"
-    NBool False -> appendLine $ "false"
-    NNull -> appendLine $ "null"
-    NUri t -> appendLine $ T.unpack t
+atomI = appendLine . T.unpack . atomText
 
 stringI :: IndentMonad m => NString NExpr -> m ()
 stringI s = let t = case s of
@@ -318,49 +324,17 @@ escapeMultilineI a = case a of
         appendLine "${" >> exprI e >> appendLine "}"
         return False
 
-unOpStr :: NUnaryOp -> String
-unOpStr op = case op of
-    NNeg -> "-"
-    NNot -> "!"
-
 unaryOpI :: IndentMonad m => NUnaryOp -> NExpr -> m ()
 unaryOpI op ex = do
     appendLine $ unOpStr op
     parenExprI (unaryPrio op <) ex
 
-binOpStr :: NBinaryOp -> String
-binOpStr op = case op of
-    NEq -> "=="
-    NNEq -> "!="
-    NLt -> "<"
-    NLte -> "<="
-    NGt -> ">"
-    NGte -> ">="
-    NAnd -> "&&"
-    NOr -> "||"
-    NImpl -> "->"
-    NUpdate -> "//"
-    NPlus -> "+"
-    NMinus -> "-"
-    NMult -> "*"
-    NDiv -> "/"
-    NConcat -> "++"
-
-binOpOf :: NExpr -> NBinaryOp
-binOpOf (Fix (NBinary op _ _)) = op
-
-binaryOpNeedsParen :: Bool -> NBinaryOp -> NExpr -> Int -> Bool
-binaryOpNeedsParen isLeftChild par child prio =
-    binaryPrio par < prio || (
-        binaryPrio par == prio &&
-        not ((if isLeftChild then id else flip) associates (binOpOf child) par)
-    )
 
 binaryOpI :: IndentMonad m => NBinaryOp -> NExpr -> NExpr -> m ()
 binaryOpI op l r = do
-    parenExprI (binaryOpNeedsParen True op l) l
+    parenExprI (binaryOpNeedsParen True (binaryPrio op)) l
     appendLine $ " " <> binOpStr op <> " "
-    parenExprI (binaryOpNeedsParen False op r) r
+    parenExprI (binaryOpNeedsParen False (binaryPrio op)) r
 
 selectI :: IndentMonad m => NExpr -> NAttrPath NExpr -> Maybe NExpr -> m ()
 selectI set attr def = do
