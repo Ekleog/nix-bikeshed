@@ -81,25 +81,43 @@ instance Monoid WriteItem where
     item `mappend` item' = BlockItem ([item, item'])
 
 flattenLineTree :: Int -> WriteItem -> T.Text
-flattenLineTree maximalLineLength = execWriter . flip runReaderT (0, True, False) . aux
+flattenLineTree maximalLineLength =
+        execWriter .
+            flip runReaderT (0, True, False) .
+            flip evalStateT True .
+            aux
     where
         indentSize = 2
-        newline idt = tell $ "\n" <> T.replicate idt " "
         localIdt idt = local (\(_, break, quoted) -> (idt, break, quoted))
         localBreak break = local (\(idt, _, quoted) -> (idt, break, quoted))
         localQuoted quoted = local (\(idt, break, _) -> (idt, break, quoted))
-        aux :: WriteItem -> ReaderT (Int,Bool,Bool) (Writer T.Text) ()
+        newline = tell "\n" >> put True
+        write str | T.null str = return ()
+        write str = do
+            needWriteIndent <- get
+            when needWriteIndent $ do
+                (idt, _, _) <- ask
+                tell $ T.replicate idt " "
+                put False
+            tell str
+
+        -- state: if last output was a newline, we need to write the indent
+        -- reader: (idt, break, quoted), where `idt` is the current indent, `break`
+        --   indicates if the current block was deemed too long to fit on a single
+        --   line and must be broken, and `quoted` indicates if we are currently writing
+        --   the contents of a string (instead of a nix expression as usual)
+        aux :: WriteItem -> StateT Bool (ReaderT (Int,Bool,Bool) (Writer T.Text)) ()
         aux item = do
             (idt, break, quoted) <- ask
             case item of
                 NewLineItem | quoted && not break ->
-                    tell "\\n"
+                    write "\\n"
                 NewLineItem ->
-                    newline idt
+                    newline
                 TextItem str | quoted && not break ->
-                    tell . T.pack . tail . init . show $ str
+                    write . T.pack . tail . init . show $ str
                 TextItem str ->
-                    tell str
+                    write str
                 BlockItem ws ->
                     forM_ ws aux
                 IndentedItem item ->
@@ -107,16 +125,16 @@ flattenLineTree maximalLineLength = execWriter . flip runReaderT (0, True, False
                 BreakableItem len item ->
                     localBreak (idt + len > maximalLineLength) $ aux item
                 QuotedItem item -> do
-                    tell $ if break then "''" else "\""
+                    write $ if break then "''" else "\""
                     when break $ localQuoted False $ aux $ IndentedItem NewLineItem
                     localQuoted True $ aux item
-                    tell $ if break then "''" else "\""
+                    write $ if break then "''" else "\""
                 AntiQuotedItem item ->
                     localQuoted False $ aux item
                 BreakableSpaceItem | break ->
-                    newline idt
+                    newline
                 BreakableSpaceItem ->
-                    tell " "
+                    write " "
 
 
 -- Writes the length of the output (if it was on one line and with double quoted strings)
@@ -328,28 +346,25 @@ keyNameI kn = case kn of
 atomI :: NAtom -> NixMonad ()
 atomI = appendLine . atomText
 
+extractNString :: NString a -> [Antiquoted T.Text a]
+extractNString (DoubleQuoted t) = t
+extractNString (Indented t) = t
+
 stringI :: NString NExpr -> NixMonad ()
 stringI s = let
         doLine :: [Antiquoted T.Text NExpr] -> NixMonad ()
-        doLine = mapM_ $ \case
-                    Plain t -> appendQuotedLine t
-                    Antiquoted e -> do
-                        appendLine "${"
-                        antiquote $ exprI e
-                        appendLine "}"
+        doLine =
+            mapM_ $ \case
+                Plain t -> appendQuotedLine t
+                Antiquoted e -> do
+                    appendLine "${"
+                    antiquote $ exprI e
+                    appendLine "}"
 
-        t = case s of { DoubleQuoted t -> t; Indented t -> t }
-        lines = Nix.splitLines t
-        (lines', endsWithNewLine) =
-            if (last lines == [Plain $ T.pack ""]) -- if ends with newline
-               then (init lines, True)
-               else (lines, False)
-
-    in tryOneLine $ quote $ do
-        indent $
+    in tryOneLine $ quote $ indent $
             intercalateM quotedNewLine $
-                map doLine lines'
-        when endsWithNewLine newLine
+                map doLine $ Nix.splitLines $
+                    extractNString s
 
 unaryOpI :: NUnaryOp -> NExpr -> NixMonad ()
 unaryOpI op ex = do
@@ -393,7 +408,7 @@ paramI par = case par of
 paramSetI :: ParamSet NExpr -> NixMonad ()
 paramSetI set = tryOneLine $ do
         appendLine "{"
-        indent breakableSpace
+        breakableSpace
         indent $ do
             let (m, isVariadic) = case set of
                         { FixedParamSet m -> (m, False); VariadicParamSet m -> (m, True) }
