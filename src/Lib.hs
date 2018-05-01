@@ -20,7 +20,9 @@ import Nix.Pretty
 import qualified Nix.Parser.Operators as Nix
 import qualified Nix.StringOperations as Nix
 
+indentSize, maxLineLength :: Indent
 maxLineLength = 80
+indentSize = 2
 
 doTheThing :: String -> Bool -> IO ()
 doTheThing file check = do
@@ -62,6 +64,20 @@ isEquivalentTo (Fix a) (Fix b) = case (fmap WrapNExpr a, fmap WrapNExpr b) of
     (a, b) -> a == b
 
 
+noop :: Monad m => m ()
+noop = return ()
+
+intercalateM :: Monad m => m () -> [m ()] -> m ()
+intercalateM v l = sequence_ $ intersperse v l
+
+
+indentExpr :: Int -> NExpr -> String
+indentExpr maximalLineLength a = T.unpack $
+    let lineTree = runNixMonad (exprI a) in
+    runIndentTreeMonad $ flattenLineTree maximalLineLength lineTree
+
+
+
 data WriteItem =
       NewLineItem
     | TextItem T.Text
@@ -80,17 +96,68 @@ instance Monoid WriteItem where
     item `mappend` BlockItem y = BlockItem ([item] ++ y)
     item `mappend` item' = BlockItem ([item, item'])
 
-flattenLineTree :: Int -> WriteItem -> T.Text
-flattenLineTree maximalLineLength =
-        execWriter .
+-- state: if last output was a newline, we need to write the indent
+-- reader: (idt, break, escape), where `idt` is the current indent, `break`
+--   indicates if the current block was deemed too long to fit on a single
+--   line and must be broken, and `escape` indicates if we are currently writing
+--   the contents of a double quoted string and need to escape things
+type NeedWriteIndent = Bool
+type Indent = Int
+type Break = Bool
+type Escape = Bool
+type IndentTreeMonad = StateT NeedWriteIndent (ReaderT (Indent, Break, Escape) (Writer T.Text))
+
+runIndentTreeMonad :: IndentTreeMonad () -> T.Text
+runIndentTreeMonad = execWriter .
             flip runReaderT (0, True, False) .
-            flip evalStateT True .
-            aux
+            flip evalStateT True
+
+localIdt :: Indent -> IndentTreeMonad a -> IndentTreeMonad a
+localIdt idt = local (\(_, break, escape) -> (idt, break, escape))
+localBreak :: Break -> IndentTreeMonad a -> IndentTreeMonad a
+localBreak break = local (\(idt, _, escape) -> (idt, break, escape))
+localEscape :: Escape -> IndentTreeMonad a -> IndentTreeMonad a
+localEscape escape = local (\(idt, break, _) -> (idt, break, escape))
+
+escapeStr :: T.Text -> T.Text
+escapeStr = T.pack . tail . init . show
+
+flattenLineTree :: Int -> WriteItem -> IndentTreeMonad ()
+flattenLineTree maximalLineLength = \case
+    NewLineItem -> do
+        (_, _, escape) <- ask
+        if escape
+           then write "\\n"
+           else newline
+    TextItem str -> do
+        (_, _, escape) <- ask
+        write $ if escape
+           then escapeStr $ str
+           else str
+    BlockItem ws ->
+        forM_ ws aux
+    IndentedItem item -> do
+        (idt, _, _) <- ask
+        localIdt (idt+indentSize) $ aux item
+    BreakableItem len item -> do
+        (idt, _, _) <- ask
+        localBreak (idt + len > maximalLineLength) $ aux item
+    QuotedItem item -> do
+        (_, break, _) <- ask
+        write $ if break then "''" else "\""
+        localEscape (not break) $ aux $
+            (if break then IndentedItem NewLineItem else mempty)
+            <> item
+        write $ if break then "''" else "\""
+    AntiQuotedItem item ->
+        localEscape False $ aux item
+    BreakableSpaceItem -> do
+        (_, break, _) <- ask
+        if break
+           then newline
+           else write " "
     where
-        indentSize = 2
-        localIdt idt = local (\(_, break, quoted) -> (idt, break, quoted))
-        localBreak break = local (\(idt, _, quoted) -> (idt, break, quoted))
-        localQuoted quoted = local (\(idt, break, _) -> (idt, break, quoted))
+        aux = flattenLineTree maximalLineLength
         newline = tell "\n" >> put True
         write str | T.null str = return ()
         write str = do
@@ -101,40 +168,6 @@ flattenLineTree maximalLineLength =
                 put False
             tell str
 
-        -- state: if last output was a newline, we need to write the indent
-        -- reader: (idt, break, quoted), where `idt` is the current indent, `break`
-        --   indicates if the current block was deemed too long to fit on a single
-        --   line and must be broken, and `quoted` indicates if we are currently writing
-        --   the contents of a string (instead of a nix expression as usual)
-        aux :: WriteItem -> StateT Bool (ReaderT (Int,Bool,Bool) (Writer T.Text)) ()
-        aux item = do
-            (idt, break, quoted) <- ask
-            case item of
-                NewLineItem | quoted && not break ->
-                    write "\\n"
-                NewLineItem ->
-                    newline
-                TextItem str | quoted && not break ->
-                    write . T.pack . tail . init . show $ str
-                TextItem str ->
-                    write str
-                BlockItem ws ->
-                    forM_ ws aux
-                IndentedItem item ->
-                    localIdt (idt+indentSize) $ aux item
-                BreakableItem len item ->
-                    localBreak (idt + len > maximalLineLength) $ aux item
-                QuotedItem item -> do
-                    write $ if break then "''" else "\""
-                    when break $ localQuoted False $ aux $ IndentedItem NewLineItem
-                    localQuoted True $ aux item
-                    write $ if break then "''" else "\""
-                AntiQuotedItem item ->
-                    localQuoted False $ aux item
-                BreakableSpaceItem | break ->
-                    newline
-                BreakableSpaceItem ->
-                    write " "
 
 
 -- Writes the length of the output (if it was on one line and with double quoted strings)
@@ -177,18 +210,6 @@ quote x =
         tell (Sum 2, mempty) -- quotes
         x
 
-
-noop :: Monad m => m ()
-noop = return ()
-
-intercalateM :: Monad m => m () -> [m ()] -> m ()
-intercalateM v l = sequence_ $ intersperse v l
-
-
-indentExpr :: Int -> NExpr -> String
-indentExpr maximalLineLength a =
-    let lineTree = runNixMonad (exprI a) in
-        T.unpack $ flattenLineTree maximalLineLength lineTree
 
 -- *I functions return the string that fits the constraints
 exprI :: NExpr -> NixMonad ()
