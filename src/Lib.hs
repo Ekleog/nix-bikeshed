@@ -3,6 +3,7 @@ module Lib where
 
 import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
+import Control.Monad.Reader
 import Control.Monad.Zip
 
 import Data.Fix
@@ -80,39 +81,46 @@ instance Monoid WriteItem where
     item `mappend` item' = BlockItem ([item, item'])
 
 flattenLineTree :: Int -> WriteItem -> T.Text
-flattenLineTree maximalLineLength = execWriter . aux 0 True False
+flattenLineTree maximalLineLength = execWriter . flip runReaderT (0, True, False) . aux
     where
         indentSize = 2
         newline idt = tell $ "\n" <> T.replicate idt " "
-        aux :: Int -> Bool -> Bool -> WriteItem -> Writer T.Text ()
-        aux idt break quoted = \case
-            NewLineItem | quoted && not break ->
-                tell "\\n"
-            NewLineItem ->
-                newline idt
-            TextItem str | quoted && not break ->
-                tell . T.pack . tail . init . show $ str
-            TextItem str ->
-                tell str
-            BlockItem ws ->
-                mapM_ (aux idt break quoted) ws
-            IndentedItem item ->
-                aux (idt + indentSize) break quoted item
-            BreakableItem len item ->
-                aux idt (idt + len > maximalLineLength) quoted item
-            QuotedItem item -> do
-                tell $ if break then "''" else "\""
-                when break $ aux idt break False $ IndentedItem NewLineItem
-                aux idt break True item
-                tell $ if break then "''" else "\""
-            AntiQuotedItem item ->
-                aux idt break False item
-            BreakableSpaceItem | break ->
-                newline idt
-            BreakableSpaceItem ->
-                tell " "
+        localIdt idt = local (\(_, break, quoted) -> (idt, break, quoted))
+        localBreak break = local (\(idt, _, quoted) -> (idt, break, quoted))
+        localQuoted quoted = local (\(idt, break, _) -> (idt, break, quoted))
+        aux :: WriteItem -> ReaderT (Int,Bool,Bool) (Writer T.Text) ()
+        aux item = do
+            (idt, break, quoted) <- ask
+            case item of
+                NewLineItem | quoted && not break ->
+                    tell "\\n"
+                NewLineItem ->
+                    newline idt
+                TextItem str | quoted && not break ->
+                    tell . T.pack . tail . init . show $ str
+                TextItem str ->
+                    tell str
+                BlockItem ws ->
+                    forM_ ws aux
+                IndentedItem item ->
+                    localIdt (idt+indentSize) $ aux item
+                BreakableItem len item ->
+                    localBreak (idt + len > maximalLineLength) $ aux item
+                QuotedItem item -> do
+                    tell $ if break then "''" else "\""
+                    when break $ localQuoted False $ aux $ IndentedItem NewLineItem
+                    localQuoted True $ aux item
+                    tell $ if break then "''" else "\""
+                AntiQuotedItem item ->
+                    localQuoted False $ aux item
+                BreakableSpaceItem | break ->
+                    newline idt
+                BreakableSpaceItem ->
+                    tell " "
 
 
+-- Writes the length of the output (if it was on one line and with double quoted strings)
+-- along with a tree representation of the output
 type NixMonad = Writer (Sum Int, WriteItem)
 
 runNixMonad :: NixMonad () -> WriteItem
