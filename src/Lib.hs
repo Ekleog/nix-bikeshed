@@ -72,8 +72,15 @@ data WriteItem =
     | BreakableSpaceItem
     deriving (Eq)
 
-flattenLineTree :: Int -> [WriteItem] -> T.Text
-flattenLineTree maximalLineLength = T.concat . map (execWriter . aux 0 True False)
+instance Monoid WriteItem where
+    mempty = BlockItem []
+    BlockItem x `mappend` BlockItem y = BlockItem (x ++ y)
+    BlockItem x `mappend` item' = BlockItem (x ++ [item'])
+    item `mappend` BlockItem y = BlockItem ([item] ++ y)
+    item `mappend` item' = BlockItem ([item, item'])
+
+flattenLineTree :: Int -> WriteItem -> T.Text
+flattenLineTree maximalLineLength = execWriter . aux 0 True False
     where
         indentSize = 2
         newline idt = tell $ "\n" <> T.replicate idt " "
@@ -106,42 +113,42 @@ flattenLineTree maximalLineLength = T.concat . map (execWriter . aux 0 True Fals
                 tell " "
 
 
-type NixMonad = Writer (Sum Int, [WriteItem])
+type NixMonad = Writer (Sum Int, WriteItem)
 
-runNixMonad :: NixMonad () -> [WriteItem]
+runNixMonad :: NixMonad () -> WriteItem
 runNixMonad = snd . execWriter
 
 runCount :: NixMonad () -> Int
 runCount = getSum . fst . execWriter
 
 appendLine :: T.Text -> NixMonad ()
-appendLine x = tell (Sum $ T.length x, [TextItem x])
+appendLine x = tell (Sum $ T.length x, TextItem x)
 
 appendQuotedLine :: T.Text -> NixMonad ()
-appendQuotedLine x = tell (Sum $ length (show x) - 2, [TextItem x])
+appendQuotedLine x = tell (Sum $ length (show x) - 2, TextItem x)
 
 newLine :: NixMonad ()
-newLine = tell (Sum 0, [NewLineItem])
+newLine = tell (Sum 0, NewLineItem)
 
 quotedNewLine :: NixMonad ()
-quotedNewLine = tell (Sum 2, [NewLineItem])
+quotedNewLine = tell (Sum 2, NewLineItem)
 
 indent :: NixMonad a -> NixMonad a
-indent = censor $ \(n, ws) -> (n, [IndentedItem $ BlockItem ws])
+indent = censor $ \(n, ws) -> (n, IndentedItem ws)
 
 tryOneLine :: NixMonad () -> NixMonad ()
-tryOneLine = censor $ \(n, ws) -> (n, [BreakableItem (getSum n) $ BlockItem ws])
+tryOneLine = censor $ \(n, ws) -> (n, BreakableItem (getSum n) ws)
 
 breakableSpace :: NixMonad ()
-breakableSpace = tell (Sum 1, [BreakableSpaceItem])
+breakableSpace = tell (Sum 1, BreakableSpaceItem)
 
 antiquote :: NixMonad () -> NixMonad ()
-antiquote = censor (\(n, ws) -> (n, [AntiQuotedItem $ BlockItem ws]))
+antiquote = censor (\(n, ws) -> (n, AntiQuotedItem ws))
 
 quote :: NixMonad () -> NixMonad ()
 quote x =
-    censor (\(n, ws) -> (n, [QuotedItem $ BlockItem ws])) $ do
-        tell (Sum 2, []) -- quotes
+    censor (\(n, ws) -> (n, QuotedItem ws)) $ do
+        tell (Sum 2, mempty) -- quotes
         x
 
 
