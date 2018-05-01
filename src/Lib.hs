@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances, FlexibleContexts, OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE FlexibleInstances, FlexibleContexts, ScopedTypeVariables, OverloadedStrings, LambdaCase #-}
 module Lib where
 
 import Control.Monad.State.Strict
@@ -213,25 +213,7 @@ quote x =
 
 -- *I functions return the string that fits the constraints
 exprI :: NExpr -> NixMonad ()
-exprI (Fix expr) = case expr of
-    NConstant c -> atomI c
-    NStr s -> stringI s
-    NSym s -> writeText s
-    NList vals -> listI vals
-    NSet binds -> setI False binds
-    NRecSet binds -> setI True binds
-    NLiteralPath p -> writeText $ T.pack p
-    NEnvPath p -> writeText $ T.pack $ "<" ++ p ++ ">"
-    NUnary op ex -> unaryOpI op ex
-    NBinary op l r -> binaryOpI op l r
-    NSelect set attr def -> selectI set attr def
-    NHasAttr set attr -> hasAttrI set attr
-    NAbs param expr -> absI param expr
-    NApp f x -> appI f x
-    NLet binds ex -> letI binds ex
-    NIf cond then_ else_ -> ifI cond then_ else_
-    NWith set expr -> stmtI "with" set expr
-    NAssert test expr -> stmtI "assert" test expr
+exprI (Fix expr) = formatI $ parenthesizeI expr
 
 -- *L functions return the length the expression would take if put all on one
 -- line
@@ -271,11 +253,12 @@ unOpStr :: NUnaryOp -> T.Text
 unOpStr = T.pack . Nix.operatorName . Nix.getUnaryOperator
 
 -- Less binds stronger
-exprPrio :: NExpr -> Prio
-exprPrio (Fix expr) = case expr of
+exprPrio :: NExprF a -> Prio
+exprPrio = \case
     -- See https://nixos.org/nix/manual/#table-operators
     NSelect _ _ _ -> selectPrio
     NApp _ _ -> appPrio
+    NList _ -> listPrio
     NUnary op _ -> unaryPrio op
     NHasAttr _ _ -> hasAttrPrio
     NBinary op _ _ -> binaryPrio op
@@ -325,7 +308,7 @@ parenIf :: Bool -> NixMonad () -> NixMonad ()
 parenIf cond = if cond then paren else id
 
 parenExprI :: (Prio -> Bool) -> NExpr -> NixMonad ()
-parenExprI pred e = parenIf (pred $ exprPrio e) (exprI e)
+parenExprI pred e = parenIf (pred $ exprPrio $ unFix e) (exprI e)
 
 binaryOpNeedsParen :: Bool -> Prio -> Prio -> Bool
 binaryOpNeedsParen isLeftChild opprio childprio =
@@ -335,147 +318,139 @@ binaryOpNeedsParen isLeftChild opprio childprio =
             associates childprio opprio)
     )
 
-bindingI :: Binding NExpr -> NixMonad ()
-bindingI b = case b of
+parenthesizeI :: NExprF NExpr -> NExprF (NixMonad ())
+parenthesizeI expr =
+    let prio = exprPrio expr in
+    case expr of
+        NBinary op l r -> NBinary op
+            (parenExprI (binaryOpNeedsParen True prio) l)
+            (parenExprI (binaryOpNeedsParen False prio) r)
+        NApp f x -> NApp (parenExprI (prio <) f) (parenExprI (prio <=) x)
+        NUnary op _ -> fmap (parenExprI (prio <)) expr
+        NSelect _ _ _ -> fmap (parenExprI (prio <=)) expr
+        NHasAttr _ _ -> fmap (parenExprI (prio <=)) expr
+        NList _ -> fmap (parenExprI (prio <=)) expr
+        expr -> fmap exprI expr
+
+formatI :: NExprF (NixMonad ()) -> NixMonad ()
+formatI = \case
+    NConstant c ->
+        writeText $ atomText c
+    NStr s ->
+        stringI s
+    NSym s ->
+        writeText s
+    NList vals -> do
+        writeText "["
+        intercalateM (writeText " ") vals
+        writeText "]"
+    NSet binds ->
+        setI False binds
+    NRecSet binds ->
+        setI True binds
+    NLiteralPath p ->
+        writeText $ T.pack p
+    NEnvPath p ->
+        writeText $ T.pack $ "<" ++ p ++ ">"
+    NUnary op ex ->
+        writeText (unOpStr op) >> ex
+    NBinary op l r ->
+        l >> writeText (" " <> binOpStr op <> " ") >> r
+    NSelect set attr def -> do
+        set >> writeText "." >> pathI attr
+        maybe noop (writeText " or " >>) def
+    NHasAttr set attr -> do
+        set >> writeText " ? " >> pathI attr
+    NAbs (Param p) ex ->
+        writeText p >> writeText ": " >> ex
+    NAbs (ParamSet set name) ex -> do
+        paramSetI set
+        maybe noop (\n -> writeText " @ " >> writeText n) name
+        writeText ": " >> ex
+    NApp f x ->
+        f >> writeText " " >> x
+    NLet binds ex -> tryOneLine $ do
+        writeText "let"
+        breakableSpace >> bindersI binds
+        breakableSpace >> writeText "in"
+        breakableSpace >> ex
+    NIf cond then_ else_ -> do
+        writeText "if " >> cond
+        writeText " then " >> then_
+        writeText " else " >> else_
+    NWith set expr -> do
+        writeText "with " >> set
+        writeText "; " >> expr
+    NAssert test expr -> do
+        writeText "assert " >> test
+        writeText "; " >> expr
+
+binderI :: Binding (NixMonad ()) -> NixMonad ()
+binderI b = case b of
     NamedVar path val -> do
-        pathI path >> writeText " = " >> exprI val >> writeText ";"
+        pathI path >> writeText " = " >> val >> writeText ";"
     Inherit set vars -> do
         writeText "inherit "
-        maybe noop (\s -> writeText "(" >> exprI s >> writeText ") ") set
+        maybe noop (\s -> writeText "(" >> s >> writeText ") ") set
         intercalateM (writeText " ") (map keyNameI vars)
         writeText ";"
 
-listI :: [NExpr] -> NixMonad ()
-listI vals = do
-    writeText "["
-    intercalateM (writeText " ")
-                 (map (parenExprI (listPrio <=)) vals)
-    writeText "]"
+bindersI :: [Binding (NixMonad ())] -> NixMonad ()
+bindersI = indent . intercalateM breakableSpace . map binderI
 
-pathI :: NAttrPath NExpr -> NixMonad ()
+pathI :: NAttrPath (NixMonad ()) -> NixMonad ()
 pathI p = intercalateM (writeText ".") $ map keyNameI p
 
-keyNameI :: NKeyName NExpr -> NixMonad ()
+keyNameI :: NKeyName (NixMonad ()) -> NixMonad ()
 keyNameI kn = case kn of
     StaticKey k -> writeText k
     DynamicKey (Plain s) -> stringI s
     DynamicKey (Antiquoted e) -> do
         writeText "${"
-        exprI e
+        e
         writeText "}"
-
-atomI :: NAtom -> NixMonad ()
-atomI = writeText . atomText
 
 extractNString :: NString a -> [Antiquoted T.Text a]
 extractNString (DoubleQuoted t) = t
 extractNString (Indented t) = t
 
-stringI :: NString NExpr -> NixMonad ()
-stringI s = let
-        doLine :: [Antiquoted T.Text NExpr] -> NixMonad ()
-        doLine =
-            mapM_ $ \case
-                Plain t -> writeQuotedText t
-                Antiquoted e -> do
-                    writeText "${"
-                    antiquote $ exprI e
-                    writeText "}"
-
-    in tryOneLine $ quote $ indent $
-            intercalateM quotedNewLine $
-                map doLine $ Nix.splitLines $
-                    extractNString s
-
-unaryOpI :: NUnaryOp -> NExpr -> NixMonad ()
-unaryOpI op ex = do
-    writeText $ unOpStr op
-    parenExprI (unaryPrio op <) ex
+stringI :: NString (NixMonad ()) -> NixMonad ()
+stringI = tryOneLine . quote . indent .
+            intercalateM quotedNewLine .
+            map doLine . Nix.splitLines .
+            extractNString
+    where
+        doLine :: [Antiquoted T.Text (NixMonad ())] -> NixMonad ()
+        doLine = mapM_ $ \case
+            Plain t -> writeQuotedText t
+            Antiquoted e -> do
+                writeText "${"
+                antiquote e
+                writeText "}"
 
 
-binaryOpI :: NBinaryOp -> NExpr -> NExpr -> NixMonad ()
-binaryOpI op l r = do
-    parenExprI (binaryOpNeedsParen True (binaryPrio op)) l
-    writeText $ " " <> binOpStr op <> " "
-    parenExprI (binaryOpNeedsParen False (binaryPrio op)) r
-
-selectI :: NExpr -> NAttrPath NExpr -> Maybe NExpr -> NixMonad ()
-selectI set attr def = do
-    parenExprI (selectPrio <=) set
-    writeText "."
-    pathI attr
-    maybe noop
-          (\x -> do
-            writeText " or "
-            parenExprI (selectPrio <=) x)
-          def
-
-hasAttrI :: NExpr -> NAttrPath NExpr -> NixMonad ()
-hasAttrI set attr = do
-    parenExprI (hasAttrPrio <=) set
-    writeText " ? "
-    pathI attr
-
-absI :: Params NExpr -> NExpr -> NixMonad ()
-absI par ex = paramI par >> writeText ": " >> exprI ex
-
-paramI :: Params NExpr -> NixMonad ()
-paramI par = case par of
-    Param p -> writeText p
-    ParamSet set name -> do
-        paramSetI set
-        maybe noop (\n -> writeText " @ " >> writeText n) name
-
-paramSetI :: ParamSet NExpr -> NixMonad ()
+paramSetI :: ParamSet (NixMonad ()) -> NixMonad ()
 paramSetI set = tryOneLine $ do
-        writeText "{"
-        breakableSpace
-        indent $ do
-            let (m, isVariadic) = case set of
-                        { FixedParamSet m -> (m, False); VariadicParamSet m -> (m, True) }
-            intercalateM
-                (writeText "," >> breakableSpace)
-                (map (\(k, x) -> do
-                    writeText k
-                    maybe noop (\e -> writeText " ? " >> exprI e) x
-                 ) (M.toList m))
-            when isVariadic $ writeText "," >> breakableSpace >> writeText "..."
-        breakableSpace >> writeText "}"
+    writeText "{"
+    breakableSpace
+    indent $ do
+        let (m, isVariadic) = case set of
+                    { FixedParamSet m -> (m, False); VariadicParamSet m -> (m, True) }
+        intercalateM
+            (writeText "," >> breakableSpace)
+            (map (\(k, x) -> do
+                writeText k
+                maybe noop (\e -> writeText " ? " >> e) x
+             ) (M.toList m))
+        when isVariadic $ writeText "," >> breakableSpace >> writeText "..."
+    breakableSpace >> writeText "}"
 
-appI :: NExpr -> NExpr -> NixMonad ()
-appI f x = do
-    parenExprI (appPrio <) f
-    writeText " "
-    parenExprI (appPrio <=) x
-
-setI :: Bool -> [Binding NExpr] -> NixMonad ()
-setI rec binds = do
+setI :: Bool -> [Binding (NixMonad ())] -> NixMonad ()
+setI rec binds = tryOneLine $ do
     when rec $ writeText "rec "
-    if binds == [] then writeText "{}"
-    else tryOneLine $ do
-            writeText "{"
-            indent $ breakableSpace >> intercalateM breakableSpace (map bindingI binds)
-            breakableSpace >> writeText "}"
-
-letI :: [Binding NExpr] -> NExpr -> NixMonad ()
-letI binds ex = tryOneLine $ do
-        writeText "let"
-        indent $ breakableSpace >> intercalateM breakableSpace (map bindingI binds)
-        breakableSpace >> writeText "in" >> breakableSpace
-        exprI ex
-
-ifI :: NExpr -> NExpr -> NExpr -> NixMonad ()
-ifI cond then_ else_ = do
-    writeText "if "
-    exprI cond
-    writeText " then "
-    exprI then_
-    writeText " else "
-    exprI else_
-
-stmtI :: T.Text -> NExpr -> NExpr -> NixMonad ()
-stmtI kw it expr = do
-    writeText $ kw <> " "
-    exprI it
-    writeText "; "
-    exprI expr
+    writeText "{"
+    when (binds /= []) $ do
+        breakableSpace
+        bindersI binds
+        breakableSpace
+    writeText "}"
