@@ -93,6 +93,9 @@ main = hspec $ do
             "-3" `lineIndentsTo` "-3"
             "1+2+(3+4)" `lineIndentsTo` "1 + 2 + 3 + 4"
             "1+2-(3+4)" `lineIndentsTo` "1 + 2 - (3 + 4)"
+        it "doesn't forget parenthesis around unary operator in function application" $ do
+            "let foo = a: a + 1; in foo (- 1)" `lineIndentsTo`
+                "let foo = a: a + 1; in foo (-1)"
         it "doesn't forget chaining update operators" $ do
             "a//b//c" `lineIndentsTo` "a // b // c"
         it "outputs select expressions" $ do
